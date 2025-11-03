@@ -161,7 +161,7 @@ def central_x(widget_width):
 # ---------- URL ----------
 frame_url = tk.Frame(root, bg="white", bd=1, relief="solid")
 frame_url.place(x=central_x(WIDTH-40), y=20, width=WIDTH-40, height=70)
-tk.Label(frame_url, text="Cole a URL do vídeo do YouTube:", font=("Segoe UI", 11), bg="white").pack(pady=(5,0))
+tk.Label(frame_url, text="URL do vídeo do YouTube:", font=("Segoe UI", 11), bg="white").pack(pady=(5,0))
 entrada_url = tk.Entry(frame_url, width=50, font=("Segoe UI", 10))
 entrada_url.pack(pady=5)
 
@@ -169,9 +169,9 @@ entrada_url.pack(pady=5)
 tk.Button(root, text="Selecionar pasta", font=("Segoe UI", 10), bg="#0078D7", fg="white", command=selecionar_pasta).place(x=central_x(120), y=110)
 tk.Button(root, text="Carregar resoluções", font=("Segoe UI", 10), bg="#28A745", fg="white", command=carregar_resolucoes).place(x=central_x(150), y=150)
 
-# ---------- Combobox resoluções ----------
+# ---------- Combobox resoluções ---------
 combo_resolucoes = ttk.Combobox(root, state="readonly", width=15)
-combo_resolucoes.place(x=central_x(100), y=190)
+combo_resolucoes.place(x=central_x(110), y=200)
 
 # ---------- Botão baixar ----------
 tk.Button(root, text="Baixar", font=("Segoe UI", 11), bg="#0078D7", fg="white", command=iniciar_download).place(x=central_x(100), y=230)
