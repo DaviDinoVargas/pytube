@@ -73,6 +73,10 @@ def merge_video_audio(video_path, audio_path, pasta, title):
     subprocess.run(cmd, check=True)
     return output_file
 
+# ---------- ajuste ----------- #
+
+# vídeos recentes do youtube com maiores qualidade não estão efetuando o merge corretamente, averiguar função de merge
+
 # ---------- Download vídeo ----------
 def baixar_video_thread(url, pasta, resolucao):
     try:
