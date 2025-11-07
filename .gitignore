@@ -2,5 +2,4 @@ videos
 ffmpeg/doc/
 **/LICENSE/
 **/README.txt/
-**/localpycs/
-**/build/main/
+build/
