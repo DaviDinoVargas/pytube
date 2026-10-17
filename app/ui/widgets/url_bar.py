@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QToolButton, QVBoxLayout, QWidget
 
 from app.domain.urls import extract_video_id
 from app.styles.icons import icon
@@ -75,6 +75,10 @@ class TopBar(QFrame):
         self.search_input.setPlaceholderText(t("topbar.search_placeholder"))
         self.url_input.setAccessibleName(t("topbar.url_placeholder"))
         self.search_input.setAccessibleName(t("topbar.search_placeholder"))
+        for field in (self.url_input, self.search_input):
+            for button in field.findChildren(QToolButton):  # botão 'limpar' nativo do campo
+                button.setAccessibleName(t("topbar.clear"))
+                button.setToolTip(t("topbar.clear"))
         self.show_message("")
 
     def show_message(self, text, error=False):

@@ -247,5 +247,7 @@ class PlayerControls(QFrame):
         QTimer.singleShot(0, self.refresh)
 
     def retranslate(self):
+        self.seek_slider.setAccessibleName(self._tr.t("player.seek"))
+        self.volume_slider.setAccessibleName(self._tr.t("player.volume"))
         self.set_source(self._source)
         self.refresh()

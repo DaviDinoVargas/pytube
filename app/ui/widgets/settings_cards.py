@@ -51,6 +51,9 @@ class SettingsCard(QFrame):
             item = self.form.itemAt(i, QFormLayout.LabelRole)
             if item is not None and item.widget() is not None and item.widget().property("key"):
                 item.widget().setText(t(item.widget().property("key")))
+                field = self.form.itemAt(i, QFormLayout.FieldRole)
+                if field is not None and field.widget() is not None:
+                    field.widget().setAccessibleName(item.widget().text())  # leitor de tela lê o rótulo do campo
 
 
 class PlaybackCard(SettingsCard):
@@ -96,6 +99,8 @@ class PlaybackCard(SettingsCard):
 
     def retranslate(self):
         super().retranslate()
+        if hasattr(self, "volume_slider"):
+            self.volume_slider.setAccessibleName(self._tr.t("settings.volume"))
         if hasattr(self, "resume_check"):
             self.resume_check.setText(self._tr.t("settings.resume"))
             self.autoplay_check.setText(self._tr.t("settings.autoplay_next"))

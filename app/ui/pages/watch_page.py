@@ -491,6 +491,7 @@ class WatchPage(Page):
         busy = self._current_task()
         downloaded = self._video is not None and video_state(self._video) == states.DOWNLOADED
         self.quality_label.setText(t("dl.quality"))
+        self.quality_combo.setAccessibleName(t("dl.quality"))
         self.download_button.setText(t("dl.button_again" if downloaded else "dl.button"))
         self.download_button.setIcon(icon("downloads", self._tokens["text_on_accent"], 18))
         self.quality_combo.setEnabled(has_height and busy is None)

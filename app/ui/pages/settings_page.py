@@ -194,6 +194,7 @@ class SettingsPage(Page):
         t = self._tr.t
         self.group_title.setText(t("settings.group_general").upper())
         self.language_label.setText(t("settings.language"))
+        self.language_combo.setAccessibleName(t("settings.language"))
         self.theme_title.setText(t("settings.theme").upper())
         self.theme_hint.setText(t("settings.theme_hint"))
         for name, swatch in self.theme_buttons.items():
