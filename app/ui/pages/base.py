@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 
 class Page(QWidget):
@@ -16,16 +16,26 @@ class Page(QWidget):
         self.subtitle.setObjectName("pageSubtitle")
         self.subtitle.setWordWrap(True)
 
-        self.body = QVBoxLayout()
+        # O conteúdo rola quando a janela é menor que a página, em vez de espremer os componentes.
+        content = QWidget()
+        content.setObjectName("pageContent")
+        self.body = QVBoxLayout(content)
+        self.body.setContentsMargins(0, 0, 8, 16)
         self.body.setSpacing(16)
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("pageScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setWidget(content)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(32, 28, 32, 16)
+        root.setContentsMargins(32, 28, 24, 0)
         root.setSpacing(4)
         root.addWidget(self.title)
         root.addWidget(self.subtitle)
         root.addSpacing(16)
-        root.addLayout(self.body, 1)
+        root.addWidget(self.scroll, 1)
 
     def retranslate(self):
         self.title.setText(self._tr.t(f"{self.key}.title"))

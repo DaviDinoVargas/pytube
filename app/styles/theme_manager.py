@@ -20,7 +20,7 @@ def build_stylesheet(t):
     return f"""
 * {{ font-family: {FONT_FAMILY}; font-size: 13px; color: {t['text_primary']}; }}
 QMainWindow, QWidget#root {{ background: {gradient}; }}
-QStackedWidget {{ background: transparent; }}
+QStackedWidget, QScrollArea#pageScroll, QWidget#pageContent {{ background: transparent; border: none; }}
 QLabel {{ background: transparent; }}
 
 QFrame#sidebar {{ background: {t['sidebar_bg']}; border-right: 1px solid {t['border']}; }}
@@ -82,6 +82,29 @@ QComboBox QAbstractItemView {{
 
 QFrame#card {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: {r['md']}px; }}
 QFrame#separator {{ background: {t['border']}; max-height: 1px; min-height: 1px; border: none; }}
+
+QDialog {{ background: {t['surface']}; }}
+QPushButton#secondary {{
+    background: transparent; color: {t['text_primary']}; border: 1px solid {t['border']};
+    border-radius: {r['sm']}px; padding: 8px 16px; font-weight: 500;
+}}
+QPushButton#secondary:hover {{ background: {t['surface_hover']}; }}
+QPushButton#secondary:focus {{ border: 2px solid {t['accent']}; padding: 7px 15px; }}
+QPushButton#secondary:disabled {{ color: {t['text_secondary']}; }}
+
+QRadioButton, QCheckBox {{ spacing: 10px; font-weight: 600; min-height: 24px; }}
+QRadioButton::indicator, QCheckBox::indicator {{
+    width: 14px; height: 14px; border: 2px solid {t['text_secondary']}; background: transparent;
+}}
+QRadioButton::indicator {{ border-radius: 9px; }}
+QCheckBox::indicator {{ border-radius: 5px; }}
+QRadioButton::indicator:checked {{
+    border-color: {t['accent']};
+    background: qradialgradient(cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 {t['accent']}, stop:0.5 {t['accent']}, stop:0.55 {t['surface']}, stop:1 {t['surface']});
+}}
+QCheckBox::indicator:checked {{ border-color: {t['accent']}; background: {t['accent']}; }}
+QRadioButton::indicator:focus, QCheckBox::indicator:focus {{ border-color: {t['text_primary']}; }}
 
 QToolTip {{
     background: {t['surface_elevated']}; color: {t['text_primary']};
