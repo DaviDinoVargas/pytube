@@ -1,27 +1,30 @@
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 
-from app.styles.tokens import DARK, FONT_FAMILY, LIGHT, RADIUS
+from app.styles.tokens import DEFAULT_THEME, FONT_FAMILY, THEMES
 
 
 def resolve_theme(preference):
     """Converte 'system' em 'dark' ou 'light' de acordo com o sistema."""
-    if preference in ("dark", "light"):
+    if preference in THEMES:
         return preference
     scheme = QGuiApplication.styleHints().colorScheme()
     return "light" if scheme == Qt.ColorScheme.Light else "dark"
 
 
 def build_stylesheet(t):
-    r = RADIUS
+    r = t['radius']
+    gradient = (
+        f"qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {t['bg_start']}, stop:1 {t['bg_end']})"
+    )
     return f"""
 * {{ font-family: {FONT_FAMILY}; font-size: 13px; color: {t['text_primary']}; }}
-QMainWindow, QWidget#root {{ background: {t['background']}; }}
-QWidget#content, QStackedWidget {{ background: {t['background']}; }}
+QMainWindow, QWidget#root {{ background: {gradient}; }}
+QStackedWidget {{ background: transparent; }}
 QLabel {{ background: transparent; }}
 
-QFrame#sidebar {{ background: {t['surface']}; border-right: 1px solid {t['border']}; }}
-QFrame#topbar {{ background: {t['surface']}; border-bottom: 1px solid {t['border']}; }}
+QFrame#sidebar {{ background: {t['sidebar_bg']}; border-right: 1px solid {t['border']}; }}
+QFrame#topbar {{ background: {t['topbar_bg']}; border-bottom: 1px solid {t['border']}; }}
 QFrame#footer {{ background: transparent; }}
 
 QLabel#brand {{ font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }}
@@ -58,7 +61,7 @@ QPushButton#primary:focus {{ border: 2px solid {t['text_primary']}; padding: 7px
 QPushButton#primary:disabled {{ background: {t['surface_elevated']}; color: {t['text_secondary']}; }}
 
 QLineEdit {{
-    background: {t['background']}; border: 1px solid {t['border']}; border-radius: {r['sm']}px;
+    background: {t['input_bg']}; border: 1px solid {t['border']}; border-radius: {r['sm']}px;
     padding: 9px 12px; selection-background-color: {t['accent']}; selection-color: {t['text_on_accent']};
 }}
 QLineEdit:hover {{ border-color: {t['text_secondary']}; }}
@@ -95,7 +98,7 @@ QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 class ThemeManager(QObject):
     theme_changed = Signal(str)
 
-    def __init__(self, app, preference="dark"):
+    def __init__(self, app, preference=DEFAULT_THEME):
         super().__init__()
         self._app = app
         self._preference = preference
@@ -107,7 +110,7 @@ class ThemeManager(QObject):
 
     @property
     def tokens(self):
-        return DARK if self._name == "dark" else LIGHT
+        return THEMES[self._name]
 
     def apply(self, preference=None):
         if preference is not None:

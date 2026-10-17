@@ -2,8 +2,7 @@ from PySide6.QtCore import QSettings
 
 from app import APP_NAME
 from app.i18n import DEFAULT_LANGUAGE, LANGUAGES
-
-THEMES = ("dark", "light", "system")
+from app.styles.tokens import DEFAULT_THEME, THEME_CHOICES
 
 
 class SettingsService:
@@ -23,8 +22,8 @@ class SettingsService:
 
     @property
     def theme(self):
-        value = self._s.value("general/theme", "dark")
-        return value if value in THEMES else "dark"
+        value = self._s.value("general/theme", DEFAULT_THEME)
+        return value if value in THEME_CHOICES else DEFAULT_THEME
 
     @theme.setter
     def theme(self, value):

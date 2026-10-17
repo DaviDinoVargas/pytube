@@ -58,9 +58,13 @@ _STRINGS = {
         "settings.group_general": "Geral",
         "settings.language": "Idioma",
         "settings.theme": "Tema",
+        "settings.theme_hint": "Escolha o visual do DinoTube. \"Sistema\" acompanha o tema do seu computador.",
         "theme.dark": "Escuro",
         "theme.light": "Claro",
         "theme.system": "Sistema",
+        "theme.ocean": "Oceano",
+        "theme.forest": "Floresta",
+        "theme.sunset": "Pôr do sol",
     },
     "en": {
         "nav.home": "Home",
@@ -116,9 +120,13 @@ _STRINGS = {
         "settings.group_general": "General",
         "settings.language": "Language",
         "settings.theme": "Theme",
+        "settings.theme_hint": "Pick how DinoTube looks. \"System\" follows your computer's theme.",
         "theme.dark": "Dark",
         "theme.light": "Light",
         "theme.system": "System",
+        "theme.ocean": "Ocean",
+        "theme.forest": "Forest",
+        "theme.sunset": "Sunset",
     },
 }
 
