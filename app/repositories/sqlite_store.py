@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.domain.errors import DuplicateError, NotFoundError, StorageError
 from app.domain.models import Category, Playlist, Progress, Video, from_dict
-from app.repositories.base import SCHEMA_VERSION, LibraryStore, empty_export
+from app.repositories.base import SCHEMA_VERSION, LibraryStore, empty_export, normalize_export
 
 # Cada item é a migração da versão N para N+1. user_version guarda a versão aplicada.
 MIGRATIONS = [
@@ -304,30 +304,46 @@ class SqliteStore(LibraryStore):
         data["progress"] = [{**dict(r), "watched": bool(r["watched"])} for r in self._all("SELECT * FROM progress")]
         return data
 
+    def _insert_all(self, data):
+        for table, cols, rows in (
+            ("videos", ["id"] + _VIDEO_COLS, data.get("videos", [])),
+            ("categories", ["id"] + _CATEGORY_COLS, data.get("categories", [])),
+            ("playlists", ["id"] + _PLAYLIST_COLS, data.get("playlists", [])),
+        ):
+            self._db.executemany(_insert(table, cols), [[row.get(c) for c in cols] for row in rows])
+        self._db.executemany(
+            "INSERT INTO video_categories (video_id, category_id) VALUES (?, ?)", data.get("video_categories", [])
+        )
+        self._db.executemany(
+            "INSERT INTO playlist_items (playlist_id, video_id, position) VALUES (?, ?, ?)", data.get("playlist_items", [])
+        )
+        self._db.executemany(
+            _insert("progress", _PROGRESS_COLS),
+            [[int(r[c]) if c == "watched" else r.get(c) for c in _PROGRESS_COLS] for r in data.get("progress", [])],
+        )
+
     def import_data(self, data):
         with self._lock:
             if not self.is_empty():
                 raise StorageError("target_not_empty", str(self._path))
             if data.get("schema_version", 0) > SCHEMA_VERSION:
                 raise StorageError("library_unsupported")
+            data = normalize_export(data)
             try:
                 with self._db:
-                    for table, cols, rows in (
-                        ("videos", ["id"] + _VIDEO_COLS, data.get("videos", [])),
-                        ("categories", ["id"] + _CATEGORY_COLS, data.get("categories", [])),
-                        ("playlists", ["id"] + _PLAYLIST_COLS, data.get("playlists", [])),
-                    ):
-                        self._db.executemany(_insert(table, cols), [[row.get(c) for c in cols] for row in rows])
-                    self._db.executemany(
-                        "INSERT INTO video_categories (video_id, category_id) VALUES (?, ?)", data.get("video_categories", [])
-                    )
-                    self._db.executemany(
-                        "INSERT INTO playlist_items (playlist_id, video_id, position) VALUES (?, ?, ?)",
-                        data.get("playlist_items", []),
-                    )
-                    self._db.executemany(
-                        _insert("progress", _PROGRESS_COLS),
-                        [[int(r[c]) if c == "watched" else r.get(c) for c in _PROGRESS_COLS] for r in data.get("progress", [])],
-                    )
+                    self._insert_all(data)
+            except sqlite3.IntegrityError as exc:
+                raise StorageError("library_import_invalid", str(exc)) from exc
+
+    def replace_data(self, data):
+        with self._lock:
+            if data.get("schema_version", 0) > SCHEMA_VERSION:
+                raise StorageError("library_unsupported")
+            data = normalize_export(data)
+            try:
+                with self._db:  # uma transação só: se algo falhar, nada foi apagado
+                    for table in ("progress", "playlist_items", "video_categories", "playlists", "categories", "videos"):
+                        self._db.execute(f"DELETE FROM {table}")
+                    self._insert_all(data)
             except sqlite3.IntegrityError as exc:
                 raise StorageError("library_import_invalid", str(exc)) from exc

@@ -272,3 +272,32 @@ def test_batch_listings_match_individual_queries(store):
     store.set_playlist_items(p.id, [v2.id, v1.id])
     assert store.list_category_links() == [(v1.id, c.id)]
     assert store.list_playlist_links() == [(p.id, v2.id, 0), (p.id, v1.id, 1)]
+
+
+def test_replace_data_swaps_everything_and_keeps_id_counter_usable(store):
+    store.add_video(video(1))
+    store.add_category(Category(name="Velha"))
+    new = {"schema_version": 1, "videos": [{"id": 7, "source_id": "zzzzzzzzzzz", "url": "u", "title": "Nova", "added_at": "2026-01-01T00:00:00+00:00"}]}
+    store.replace_data(new)
+    assert [v.id for v in store.list_videos()] == [7] and store.list_categories() == []
+    assert store.add_video(video(2)).id > 7
+
+
+def test_replace_data_rejects_newer_schema_and_keeps_content(store):
+    store.add_video(video(1))
+    with pytest.raises(StorageError) as exc:
+        store.replace_data({"schema_version": 999})
+    assert exc.value.code == "library_unsupported" and len(store.list_videos()) == 1
+
+
+def test_import_fills_defaults_for_fields_missing_in_older_backups(store):
+    store.replace_data({"schema_version": 1, "videos": [{"id": 3, "source_id": "yyyyyyyyyyy", "url": "u"}]})
+    v = store.get_video(3)
+    assert (v.source, v.title, v.local_status) == ("youtube", "", "none") and v.added_at  # padrões preenchidos
+
+
+def test_import_with_missing_required_field_is_rejected_cleanly(store):
+    store.add_video(video(1))
+    with pytest.raises(StorageError) as exc:
+        store.replace_data({"schema_version": 1, "videos": [{"id": 3, "url": "u"}]})  # sem source_id
+    assert exc.value.code == "library_import_invalid" and len(store.list_videos()) == 1  # nada foi trocado

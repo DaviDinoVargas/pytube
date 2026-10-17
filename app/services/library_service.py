@@ -114,12 +114,33 @@ class LibraryService(QObject):
         video = self.get(video_id)
         if video is None:
             return
-        if delete_file and video.local_path:
-            path = self.local_path(video, must_exist=False)
-            if path is not None and path.is_file():
-                path.unlink()
+        if delete_file:
+            self.delete_local_file(video_id, notify=False)
         self.store.delete_video(video_id)
         self.notify()
+
+    def is_inside_library(self, path):
+        """True se `path` está dentro da pasta `videos/` da biblioteca. Só esses arquivos o app pode apagar."""
+        try:
+            return Path(path).resolve().is_relative_to(self.layout.videos.resolve())
+        except (OSError, ValueError):
+            return False
+
+    def delete_local_file(self, video_id, notify=True):
+        """Apaga o arquivo baixado e volta o vídeo a 'salvo'. Devolve os bytes liberados.
+
+        Um arquivo fora de `videos/` (ex.: localizado manualmente, ou vindo de um backup) NUNCA é apagado:
+        o app só esquece a ligação com ele."""
+        video = self.get(video_id)
+        if video is None or not video.local_path:
+            return 0
+        freed = 0
+        path = self.local_path(video, must_exist=False)
+        if path is not None and path.is_file() and self.is_inside_library(path):
+            freed = path.stat().st_size
+            path.unlink()
+        self.clear_local_file(video_id)
+        return freed
 
     # -- arquivo local ------------------------------------------------------
     def local_path(self, video, must_exist=True):

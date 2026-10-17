@@ -10,6 +10,25 @@ def empty_export():
     return data
 
 
+def normalize_export(data):
+    """Completa cada linha com os valores padrão do modelo (backups antigos podem não ter campos novos).
+
+    Levanta StorageError('library_import_invalid') se faltar algo obrigatório (ex.: source_id)."""
+    from app.domain.errors import StorageError
+    from app.domain.models import Category, Playlist, Progress, Video, from_dict, to_dict
+
+    out = empty_export()
+    out["schema_version"] = data.get("schema_version", SCHEMA_VERSION)
+    try:
+        for key, model in (("videos", Video), ("categories", Category), ("playlists", Playlist), ("progress", Progress)):
+            out[key] = [to_dict(from_dict(model, row)) for row in data.get(key, [])]
+    except (TypeError, AttributeError) as exc:
+        raise StorageError("library_import_invalid", str(exc)) from exc
+    for key in ("video_categories", "playlist_items"):
+        out[key] = [list(link) for link in data.get(key, [])]
+    return out
+
+
 class LibraryStore(ABC):
     """Contrato único da biblioteca. SQLite e JSON implementam exatamente o mesmo comportamento."""
 
@@ -104,6 +123,10 @@ class LibraryStore(ABC):
 
     @abstractmethod
     def import_data(self, data): ...
+
+    @abstractmethod
+    def replace_data(self, data):
+        """Troca TODO o conteúdo pelo de `data`, de forma atômica: se falhar, o conteúdo antigo continua intacto."""
 
     def is_empty(self):
         return not any(self.export_data()[key] for key in EXPORT_KEYS)

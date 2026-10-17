@@ -5,7 +5,7 @@ from pathlib import Path
 
 from app.domain.errors import DuplicateError, NotFoundError, StorageError
 from app.domain.models import Category, Playlist, Progress, Video, from_dict, to_dict
-from app.repositories.base import SCHEMA_VERSION, LibraryStore, empty_export
+from app.repositories.base import SCHEMA_VERSION, LibraryStore, empty_export, normalize_export
 
 
 class JsonStore(LibraryStore):
@@ -248,7 +248,18 @@ class JsonStore(LibraryStore):
                 raise StorageError("target_not_empty", str(self._path))
             if data.get("schema_version", 0) > SCHEMA_VERSION:
                 raise StorageError("library_unsupported")
-            merged = empty_export()
-            merged.update({k: data[k] for k in merged if k in data})
-            self._data = merged
+            self._data = normalize_export(data)
             self._save()
+
+    def replace_data(self, data):
+        with self._lock:
+            if data.get("schema_version", 0) > SCHEMA_VERSION:
+                raise StorageError("library_unsupported")
+            merged = normalize_export(data)
+            previous = self._data
+            self._data = merged
+            try:
+                self._save()
+            except Exception:
+                self._data = previous
+                raise
