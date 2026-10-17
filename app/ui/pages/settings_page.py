@@ -5,7 +5,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -17,9 +16,8 @@ from app.i18n import LANGUAGES
 from app.services.storage_service import STATUS_READY, STATUS_ROOT_MISSING, STATUS_UNCONFIGURED, format_bytes
 from app.styles.tokens import THEME_CHOICES
 from app.ui.pages.base import Page
+from app.ui.widgets.flow_layout import FlowLayout
 from app.ui.widgets.theme_swatch import ThemeSwatch
-
-SWATCH_COLUMNS = 3
 
 
 class SettingsPage(Page):
@@ -58,16 +56,13 @@ class SettingsPage(Page):
         self._theme_group = QButtonGroup(self)
         self._theme_group.setExclusive(True)
         swatches = QWidget()
-        grid = QGridLayout(swatches)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(14)
-        for i, name in enumerate(THEME_CHOICES):
+        grid = FlowLayout(swatches, hspacing=14, vspacing=14)  # 22 temas: quebra em quantas colunas couberem
+        for name in THEME_CHOICES:
             swatch = ThemeSwatch(name, name, "#8B7CF6")
             swatch.clicked.connect(lambda _=False, n=name: self.theme_selected.emit(n))
             self._theme_group.addButton(swatch)
             self.theme_buttons[name] = swatch
-            grid.addWidget(swatch, i // SWATCH_COLUMNS, i % SWATCH_COLUMNS)
-        grid.setColumnStretch(SWATCH_COLUMNS, 1)
+            grid.addWidget(swatch)
         self.set_theme(theme)
 
         general = self._card()

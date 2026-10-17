@@ -89,7 +89,8 @@ class Sidebar(QFrame):
 
     def refresh(self):
         """Reaplica textos, ícones e largura conforme idioma, tema e estado de recolhimento."""
-        self.setFixedWidth(COLLAPSED_WIDTH if self._collapsed else EXPANDED_WIDTH)
+        width = self._tokens.get("sidebar_width", EXPANDED_WIDTH)  # fontes monoespaçadas pedem uma sidebar mais larga
+        self.setFixedWidth(COLLAPSED_WIDTH if self._collapsed else width)
         self._brand.setVisible(not self._collapsed)
         self._toggle.setIcon(icon("panel", self._tokens["text_secondary"]))
         self._toggle.setToolTip(self._tr.t("nav.expand" if self._collapsed else "nav.collapse"))
@@ -107,7 +108,7 @@ class Sidebar(QFrame):
             else:
                 btn.setText("  " + shown)
                 btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-                btn.setFixedWidth(EXPANDED_WIDTH - 24)
+                btn.setFixedWidth(width - 24)
         self._refresh_icons()
 
     def _refresh_icons(self):

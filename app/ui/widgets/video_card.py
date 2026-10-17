@@ -56,6 +56,13 @@ def cover_pixmap(path, width, height, radius, tokens):
     return out
 
 
+def _badge_text_color(state, tokens):
+    """Cor do ícone do selo: a mesma do texto do selo no QSS (contrasta com a cor do estado)."""
+    if state == states.DOWNLOADED:
+        return tokens["text_on_downloaded"]
+    return tokens["text_on_error"] if state == states.FAILED else tokens["text_on_warning"]
+
+
 class StateBadge(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
@@ -171,7 +178,7 @@ class VideoCard(ActionsMixin, QFrame):
             badge = StateBadge(thumb)
             badge.setProperty("state", state)
             badge.icon_label.setPixmap(
-                icon(_BADGE_ICON[state], tokens["text_on_accent"] if state == states.DOWNLOADED else "#1B1B1B", 14).pixmap(14, 14)
+                icon(_BADGE_ICON[state], _badge_text_color(state, tokens), 14).pixmap(14, 14)
             )
             badge.text_label.setText(state_text)
             badge.adjustSize()
