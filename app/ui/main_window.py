@@ -14,6 +14,7 @@ from app.services.maintenance_service import MaintenanceService
 from app.services.provider_service import update_providers
 from app.services.organization_service import OrganizationService
 from app.services.progress_service import ProgressService
+from app.services.queue_service import QueueService
 from app.ui.dialogs.backup_dialog import BackupDialog
 from app.ui.dialogs.name_dialog import NameDialog
 from app.ui.dialogs.space_dialog import SpaceDialog
@@ -35,7 +36,7 @@ from app.ui.workers import run_async
 from app.services.storage_service import STATUS_READY
 from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
-from app.ui.widgets.sidebar import Sidebar
+from app.ui.widgets.sidebar import NAV_ITEMS, Sidebar
 from app.ui.widgets.url_bar import TopBar
 
 DEFAULT_PAGE = "home"
@@ -51,6 +52,7 @@ class MainWindow(QMainWindow):
         self.library = LibraryService(storage, providers, thumbnails)
         self.progress = ProgressService(self.library)
         self.org = OrganizationService(self.library)
+        self.queue = QueueService(self.library, settings)
         self.providers = providers
         self.maintenance = MaintenanceService(self.library, storage, self.library.thumbnails)
         self.backups = BackupService(self.library, storage)
@@ -114,10 +116,20 @@ class MainWindow(QMainWindow):
         self._add_page(self.settings_page)
         self.watch_page = WatchPage(
             translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options, self.organize,
-            org=self.org,
+            org=self.org, queue=self.queue,
         )
         self.watch_page.playback_ended.connect(self._on_playback_ended)
         self.watch_page.video_opened.connect(self.open_saved_video)
+        self.queue.changed.connect(self._sync_queue_current)
+        self.queue.changed.connect(self.watch_page.refresh_queue)
+        self.watch_page.queue_add_requested.connect(lambda video_id: self._queue_add([video_id]))
+        self.watch_page.queue_previous_requested.connect(lambda: self._queue_step(-1))
+        self.watch_page.queue_next_requested.connect(lambda: self._queue_step(1))
+        self.watch_page.queue_remove_requested.connect(self.queue.remove)
+        self.watch_page.queue_order_changed.connect(self.queue.set_order)
+        self.watch_page.queue_clear_requested.connect(self.queue.clear)
+        self.watch_page.keep_on_top_toggled.connect(lambda on: self.layouts.set_keep_on_top(on))
+        self.watch_page.full_window_requested.connect(lambda: self._on_layout(self._settings.layout_before_compact))
         self.watch_page.player.mini_changed.connect(self._on_mini_changed)
         self.watch_page.player.expand_requested.connect(self._enter_watch)
         self.playlist_page = PlaylistDetailPage(translator, self.org, library, tokens)
@@ -243,6 +255,7 @@ class MainWindow(QMainWindow):
         """Abre um vídeo da biblioteca. Com `playlist_id`, a reprodução segue para o próximo item ao terminar."""
         self._playlist_id = playlist_id
         self._enter_watch()
+        self.queue.set_current(video_id)  # só marca se o vídeo está na fila
         self.watch_page.open_saved(video_id)
         self._refresh_playlist_context(video_id)
 
@@ -276,17 +289,38 @@ class MainWindow(QMainWindow):
             self._playlist_id = None
             self.watch_page.set_playlist_context(None)
 
-    def _on_playback_ended(self):
-        """Fim do vídeo dentro de uma playlist: segue para o próximo item (se houver)."""
+    # -- fila de reprodução ---------------------------------------------------------------------
+    def _queue_add(self, ids, play_next=False):
+        self.queue.add(ids, play_next)
+        self.top_bar.show_message(self._tr.t("queue.next_toast" if play_next else "queue.added_toast"), False)
+
+    def _sync_queue_current(self):
+        """O vídeo que está tocando e entra na fila vira o 'atual' dela."""
         video = self.watch_page.player.video
+        if video is not None and video.id in self.queue and self.queue.current is None:
+            self.queue.set_current(video.id)
+
+    def _queue_step(self, direction):
+        """Anterior (-1) ou próximo (+1) da fila, a partir do vídeo aberto ou do marcado como atual."""
+        video = self.watch_page.player.video
+        base = video.id if video is not None and video.id in self.queue else self.queue.current
+        target = self.queue.next_id(base) if direction > 0 else self.queue.previous_id(base)
+        if target is not None:
+            self.open_saved_video(target)
+
+    def _on_playback_ended(self):
+        """Fim do vídeo: segue a fila (se ele está nela) ou a playlist (se há uma tocando)."""
+        video = self.watch_page.player.video
+        if video is not None and self._settings.autoplay_next and video.id in self.queue:
+            following = self.queue.next_id(video.id)
+            if following is not None:
+                self._open_next(following)
+                return
         if self._playlist_id is None or video is None or not self._settings.autoplay_next:
             return
         following = self.org.next_in_playlist(self._playlist_id, video.id)
-        if following is not None and self.watch_page.player.is_mini:
-            self.watch_page.open_saved(following.id)  # no mini player segue a playlist sem tirar o usuário da página atual
-            self._refresh_playlist_context(following.id)
-        elif following is not None:
-            self.open_saved_video(following.id, self._playlist_id)
+        if following is not None:
+            self._open_next(following.id, self._playlist_id)
         else:
             self._playlist_id = None
             self.watch_page.set_playlist_context(None)
@@ -294,6 +328,16 @@ class MainWindow(QMainWindow):
     def _on_mini_changed(self, mini):
         if mini and self.current_page == "watch":
             self._go_back()
+
+    def _open_next(self, video_id, playlist_id=None):
+        """Abre o próximo da fila/playlist. No mini player, troca o vídeo sem tirar o usuário da página em que está."""
+        if self.watch_page.player.is_mini:
+            self._playlist_id = playlist_id
+            self.queue.set_current(video_id)
+            self.watch_page.open_saved(video_id)
+            self._refresh_playlist_context(video_id)
+        else:
+            self.open_saved_video(video_id, playlist_id)
 
     def _enter_watch(self):
         self.watch_page.player.exit_mini()
@@ -549,6 +593,10 @@ class MainWindow(QMainWindow):
             path = self.library.local_path(video)
             if path is not None:
                 QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        elif action == "queue_add":
+            self._queue_add([video_id])
+        elif action == "queue_next":
+            self._queue_add([video_id], play_next=True)
         elif action == "remove":
             if video.local_status == "ok" and not self._confirm_remove():
                 return
@@ -583,6 +631,8 @@ class MainWindow(QMainWindow):
         return self._settings
 
     def _on_layout(self, key):
+        if key == "compact" and self._settings.layout != "compact":
+            self._settings.layout_before_compact = self._settings.layout  # para o botão 'Janela completa'
         self._settings.layout = key
         self.layouts.apply(key, go_landing=True)
 
@@ -606,7 +656,21 @@ class MainWindow(QMainWindow):
         for page in self.pages.values():
             page.set_tokens(tokens)
 
+    def _build_nav_menu(self):
+        """Menu do botão ☰ da barra superior (layout Compacto, que não tem sidebar)."""
+        from PySide6.QtWidgets import QMenu
+
+        t = self._tr.t
+        menu = QMenu(self.top_bar.menu_button)
+        for key in NAV_ITEMS:
+            menu.addAction(t(f"nav.{key}")).triggered.connect(lambda _=False, k=key: self.show_page(k))
+        menu.addSeparator()
+        menu.addAction(t("queue.title")).triggered.connect(lambda: self.show_landing("watch") if self.watch_page.player.video is None else self.show_page("watch"))
+        menu.addAction(t("nav.settings")).triggered.connect(lambda: self.show_page("settings"))
+        self.top_bar.menu_button.setMenu(menu)
+
     def retranslate(self):
+        self._build_nav_menu()
         label = self._tr.t("nav.settings")
         self.settings_button.setToolTip(f"{label} (Ctrl+,)")
         self.settings_button.setAccessibleName(label)

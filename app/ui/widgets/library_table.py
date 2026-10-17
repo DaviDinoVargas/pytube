@@ -272,6 +272,9 @@ class LibraryTable(QTableView):
             if row is not None and row.state in (states.SAVED, states.MISSING, states.INVALID, states.FAILED):
                 menu.addAction(t("card.menu_download")).triggered.connect(lambda: self.action_requested.emit(ids, "download"))
             menu.addAction(t("card.menu_browser")).triggered.connect(lambda: self.action_requested.emit(ids, "browser"))
+        menu.addAction(t("queue.add")).triggered.connect(lambda: self.action_requested.emit(ids, "queue_add"))
+        menu.addAction(t("queue.play_next")).triggered.connect(lambda: self.action_requested.emit(ids, "queue_next"))
+        if single:
             if row is not None and row.state == states.DOWNLOADED:
                 menu.addAction(t("card.menu_folder")).triggered.connect(lambda: self.action_requested.emit(ids, "folder"))
             menu.addSeparator()

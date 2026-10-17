@@ -45,6 +45,35 @@ class SettingsService:
         self._s.setValue("general/layout", value)
 
     @property
+    def queue_ids(self):
+        """Fila de reprodução: ids dos vídeos, na ordem."""
+        raw = str(self._s.value("queue/ids", "") or "")
+        return tuple(int(x) for x in raw.split(",") if x.strip().isdigit())
+
+    @queue_ids.setter
+    def queue_ids(self, value):
+        self._s.setValue("queue/ids", ",".join(str(int(i)) for i in value))
+
+    @property
+    def queue_current(self):
+        raw = str(self._s.value("queue/current", "") or "")
+        return int(raw) if raw.isdigit() else None
+
+    @queue_current.setter
+    def queue_current(self, value):
+        self._s.setValue("queue/current", "" if value is None else str(int(value)))
+
+    @property
+    def layout_before_compact(self):
+        """Layout a que o botão 'Janela completa' volta."""
+        value = self._s.value("general/layout_before_compact", DEFAULT_LAYOUT)
+        return value if value in LAYOUT_CHOICES and value != "compact" else DEFAULT_LAYOUT
+
+    @layout_before_compact.setter
+    def layout_before_compact(self, value):
+        self._s.setValue("general/layout_before_compact", value)
+
+    @property
     def watch_details(self):
         """Painel de detalhes aberto na tela do vídeo (layout clássico)."""
         return str(self._s.value("ui/watch_details", "false")).lower() == "true"

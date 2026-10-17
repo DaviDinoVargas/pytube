@@ -66,3 +66,17 @@ def test_icon_buttons_of_the_player_are_keyboard_focusable(w):
     c = w.watch_page.player.controls
     for button in (c.play_button, c.mute_button, c.fullscreen_button, c.mini_button):
         assert button.focusPolicy() & Qt.TabFocus
+
+
+@pytest.mark.parametrize("layout", ["classic", "streaming", "cinema", "manager", "workstation", "compact"])
+def test_every_layout_keeps_all_controls_named(w, qtbot, layout):
+    w.resize(1400, 850)
+    w.settings_page.layout_buttons[layout].click()
+    for page in PAGES:
+        w.show_page(page)
+        qtbot.wait(20)
+        assert unnamed_controls(w) == [], (layout, page)
+    w.queue.add([1])
+    w.open_saved_video(1)
+    w.watch_page.player._backend.loaded.emit()
+    assert unnamed_controls(w) == [], (layout, "watch")

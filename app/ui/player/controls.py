@@ -154,6 +154,11 @@ class PlayerControls(QFrame):
         self._fullscreen = fullscreen
         self.refresh()
 
+    def set_compact(self, compact):
+        """Janela estreita (layout Compacto): fora volume, qualidade, origem e mini player; ficam tocar, tempo, mudo, velocidade e tela cheia."""
+        for widget in (self.volume_slider, self.quality_button, self.source_chip, self.mini_button):
+            widget.setVisible(not compact)
+
     def set_mini(self, mini):
         """No mini player só ficam o essencial: tocar, tempo, mudo e voltar à página do vídeo."""
         self._mini = mini

@@ -94,6 +94,8 @@ class ActionsMixin:
         if self._can_download and self.state in (states.SAVED, states.MISSING, states.INVALID, states.FAILED):
             entries.append(("download", t("card.menu_download")))
         entries.append(("browser", t("card.menu_browser")))
+        entries.append(("queue_add", t("queue.add")))
+        entries.append(("queue_next", t("queue.play_next")))
         if self.state == states.DOWNLOADED:
             entries.append(("folder", t("card.menu_folder")))
         base_entries = list(entries)

@@ -265,6 +265,13 @@ QProgressBar#cardProgress[watched="true"]::chunk {{ background: {t['success']}; 
 
 QLabel#sectionTitle {{ font-family: {title}; font-size: {size(17)}px; font-weight: 700; }}
 QLabel#watchTitle {{ font-family: {title}; font-size: {size(21)}px; font-weight: 700; }}
+QLabel#watchTitle[compact="true"] {{ font-size: 15px; }}
+QFrame#queuePanel {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#queuePanel QLabel {{ background: transparent; }}
+QListWidget#queueList {{ background: transparent; border: none; outline: none; }}
+QListWidget#queueList::item {{ padding: 7px 8px; border-radius: {r['sm']}px; }}
+QListWidget#queueList::item:hover {{ background: {t['surface_hover']}; }}
+QListWidget#queueList::item:selected {{ background: {t['accent_soft']}; color: {t['text_primary']}; }}
 QToolButton#textButton {{
     background: transparent; border: none; color: {t['text_secondary']}; padding: 4px 8px; border-radius: {r['sm']}px;
 }}

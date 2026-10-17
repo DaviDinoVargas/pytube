@@ -35,6 +35,7 @@ from app.ui.widgets.flow_layout import FlowLayout
 from app.ui.widgets.details_panel import PANEL_WIDTH, DetailsPanel
 from app.ui.widgets.download_row import status_text
 from app.ui.widgets.library_list import PANE_WIDTH, LibraryList
+from app.ui.widgets.queue_panel import QueuePanel
 from app.ui.widgets.related_strip import RelatedStrip
 from app.ui.player.player_widget import PlayerWidget
 from app.ui.widgets.video_card import format_added
@@ -70,9 +71,18 @@ class WatchPage(Page):
     message = Signal(str, bool)  # texto, é_erro
     playback_ended = Signal()
     video_opened = Signal(int)  # vídeo escolhido na lista da biblioteca ou nos relacionados
+    queue_add_requested = Signal(int)
+    queue_previous_requested = Signal()
+    queue_next_requested = Signal()
+    queue_remove_requested = Signal(int)
+    queue_order_changed = Signal(list)
+    queue_clear_requested = Signal()
+    keep_on_top_toggled = Signal(bool)
+    full_window_requested = Signal()
 
-    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None, org=None):
+    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None, org=None, queue=None):
         super().__init__(translator)
+        self._queue = queue
         self._library = library
         self._org = org
         self._settings = settings
@@ -112,6 +122,23 @@ class WatchPage(Page):
         self.details_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.details_toggle.toggled.connect(self._on_details_toggled)
         header.addWidget(self.details_toggle)
+        self.pin_button = QToolButton()
+        self.pin_button.setObjectName("toolbarToggle")
+        self.pin_button.setCheckable(True)
+        self.pin_button.setChecked(settings.compact_on_top)
+        self.pin_button.setCursor(Qt.PointingHandCursor)
+        self.pin_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.pin_button.setIconSize(QSize(16, 16))
+        self.pin_button.toggled.connect(self._on_pin_toggled)
+        self.full_button = QToolButton()
+        self.full_button.setObjectName("toolbarToggle")
+        self.full_button.setCursor(Qt.PointingHandCursor)
+        self.full_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.full_button.clicked.connect(self.full_window_requested)
+        header.addWidget(self.pin_button)
+        header.addWidget(self.full_button)
+        self.pin_button.hide()
+        self.full_button.hide()
         self.header = header
         self.body.addLayout(header)
 
@@ -166,6 +193,7 @@ class WatchPage(Page):
         self.player.playback_ended.connect(self.playback_ended)
         self.stage = QFrame()  # no modo cinema é o palco preto que ocupa a janela; nos demais, só um suporte
         self.stage.setObjectName("stage")
+        self.stage.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)  # não cresce além do player; o cinema fixa a altura
         self.stage_layout = QHBoxLayout(self.stage)
         self.stage_layout.setContentsMargins(0, 0, 0, 0)
         self.stage_layout.addStretch(0)
@@ -179,6 +207,12 @@ class WatchPage(Page):
         self.meta_label.setObjectName("pageSubtitle")
         col.addWidget(self.title_label)
         col.addWidget(self.meta_label)
+        # tudo que fica abaixo do título (ações, download, descrição) mora neste bloco: o layout Compacto o esconde inteiro
+        self.info_block = QWidget()
+        info = QVBoxLayout(self.info_block)
+        info.setContentsMargins(0, 0, 0, 0)
+        info.setSpacing(12)
+        col.addWidget(self.info_block)
 
         actions_box = QWidget()
         actions = FlowLayout(actions_box, 10, 8)  # quebra de linha quando o painel central fica estreito
@@ -195,15 +229,20 @@ class WatchPage(Page):
         actions.addWidget(self.categories_button)
         actions.addWidget(self.playlists_button)
         actions.addWidget(self.browser_button)
-        col.addWidget(actions_box)
+        self.queue_button = QPushButton()
+        self.queue_button.setObjectName("secondary")
+        self.queue_button.setCursor(Qt.PointingHandCursor)
+        self.queue_button.clicked.connect(lambda: self.queue_add_requested.emit(self._video.id) if self._video is not None else None)
+        actions.addWidget(self.queue_button)
+        info.addWidget(actions_box)
 
         self.playlist_label = QLabel()
         self.playlist_label.setObjectName("cardMeta")
         self.playlist_label.hide()
-        col.addWidget(self.playlist_label)
+        info.addWidget(self.playlist_label)
         self.local_label = QLabel()
         self.local_label.setObjectName("statusOk")
-        col.addWidget(self.local_label)
+        info.addWidget(self.local_label)
 
         # download: qualidade + botão + andamento
         panel = QFrame()
@@ -248,7 +287,7 @@ class WatchPage(Page):
         panel_lay.addLayout(progress_row)
         panel_lay.addWidget(self.progress_label)
         self.download_panel = panel
-        col.addWidget(panel)
+        info.addWidget(panel)
 
         card = QFrame()
         card.setObjectName("card")
@@ -265,7 +304,15 @@ class WatchPage(Page):
         card_lay.addWidget(self.description_toggle, 0, Qt.AlignLeft)
         self.description_card = card
         card.setMaximumWidth(1000)
-        col.addWidget(card, 0, Qt.AlignLeft)
+        info.addWidget(card, 0, Qt.AlignLeft)
+        self.queue_panel = QueuePanel(translator, tokens)
+        self.queue_panel.video_opened.connect(self.video_opened)
+        self.queue_panel.remove_requested.connect(self.queue_remove_requested)
+        self.queue_panel.order_changed.connect(self.queue_order_changed)
+        self.queue_panel.clear_requested.connect(self.queue_clear_requested)
+        self.queue_panel.next_requested.connect(self.queue_next_requested)
+        self.queue_panel.previous_requested.connect(self.queue_previous_requested)
+        col.addWidget(self.queue_panel)
         self.related = RelatedStrip(translator, tokens)
         self.related.video_opened.connect(self.video_opened)
         col.addWidget(self.related)
@@ -408,10 +455,41 @@ class WatchPage(Page):
         self.stage.setMinimumHeight(self._stage_height())
         self.player.set_max_height(self._stage_height())
 
+    # -- layout compacto: só o player, o título e a fila -------------------------------------------------
+    @property
+    def compact(self):
+        return self._profile.watch == layouts.WATCH_COMPACT
+
+    def _apply_compact(self):
+        compact = self.compact
+        self.info_block.setVisible(not compact)
+        self.meta_label.setVisible(not compact)
+        self.pin_button.setVisible(compact)
+        self.full_button.setVisible(compact)
+        self.player.set_compact(compact)
+        self.title_label.setProperty("compact", compact)
+        self.title_label.style().unpolish(self.title_label)
+        self.title_label.style().polish(self.title_label)
+        self.refresh_queue()
+
+    def _on_pin_toggled(self, checked):
+        self._settings.compact_on_top = checked
+        self.keep_on_top_toggled.emit(checked)
+
+    def refresh_queue(self):
+        """Mostra a fila: sempre no layout Compacto; nos outros, só quando há algo nela (e nunca no modo cinema)."""
+        queue = self._queue
+        if queue is None:
+            self.queue_panel.hide()
+            return
+        self.queue_panel.set_queue(queue.videos(), queue.current)
+        self.queue_panel.setVisible(not self.cinema and (self.compact or len(queue) > 0))
+
     def set_layout(self, profile):
         self._profile = profile
         self._apply_panes()
         self._apply_cinema()
+        self._apply_compact()
         self.related.set_allowed(profile.related)
         self._update_related()
 
@@ -629,6 +707,7 @@ class WatchPage(Page):
         self.save_button.setEnabled(self._library.ready)
         for button in (self.categories_button, self.playlists_button):
             button.setEnabled(saved and self._organize is not None)
+        self.queue_button.setEnabled(saved and self._queue is not None)
         local = ""
         if saved and video_state(self._video) == states.DOWNLOADED:
             local = t(
@@ -895,6 +974,9 @@ class WatchPage(Page):
         self.player.set_tokens(tokens)
         self.back_button.setIcon(icon("back", tokens["text_primary"], 18))
         self.cinema_back.setIcon(icon("back", "#FFFFFF", 18))
+        self.pin_button.setIcon(icon("pin", tokens["text_primary"], 16))
+        self.queue_button.setIcon(icon("queue", tokens["text_primary"], 18))
+        self.queue_panel.set_tokens(tokens)
         self.browser_button.setIcon(icon("external", tokens["text_primary"], 18))
         self.related.set_tokens(tokens)
         if self.library_list is not None:
@@ -917,6 +999,14 @@ class WatchPage(Page):
         self.details_toggle.setToolTip(t("details.toggle"))
         self.details_toggle.setAccessibleName(t("details.toggle"))
         self.empty_label.setText(t("watch.empty"))
+        self.queue_button.setText(t("queue.button"))
+        self.pin_button.setText(" " + t("compact.pin"))
+        self.pin_button.setToolTip(t("compact.pin_tip"))
+        self.pin_button.setAccessibleName(t("compact.pin_tip"))
+        self.full_button.setText(t("compact.full"))
+        self.full_button.setToolTip(t("compact.full_tip"))
+        self.full_button.setAccessibleName(t("compact.full_tip"))
+        self.queue_panel.retranslate()
         self.cinema_back.setText(" " + t("watch.back"))
         self.cinema_info.setText(t("watch.info"))
         self.cinema_info.setToolTip(t("watch.info_tip"))

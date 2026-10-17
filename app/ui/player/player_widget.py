@@ -225,6 +225,9 @@ class PlayerWidget(QFrame):
             if self._max_height:
                 self.set_max_height(self._max_height)
 
+    def set_compact(self, compact):
+        self.controls.set_compact(compact)
+
     def is_playing(self):
         return self._backend is not None and self._backend.is_playing()
 

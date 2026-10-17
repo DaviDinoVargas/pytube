@@ -158,3 +158,20 @@ def test_is_filtered():
 def test_empty_library_and_no_match(data):
     assert apply_query(LibraryQuery(), LibraryData(videos=[]), NOW) == []
     assert run(data, state=q.STATE_DOWNLOADED, text="receita") == []
+
+
+def test_channel_filter_is_accent_insensitive_and_removable(data):
+    from dataclasses import replace
+
+    from app.domain.query import LibraryQuery, apply_query
+
+    base = apply_query(LibraryQuery(), data)
+    channels = {v.channel for v in base if v.channel}
+    assert channels, "os dados de teste precisam ter canais"
+    sample = sorted(channels)[0]
+    query = LibraryQuery(channel=sample[:3].upper())
+    found = apply_query(query, data)
+    assert found and all(sample[:3].casefold() in v.channel.casefold() for v in found)
+    assert ("channel", sample[:3].upper()) in query.active_filters()
+    assert query.without("channel").channel == "" and query.cleared().channel == ""
+    assert apply_query(replace(query, channel="zzzz-inexistente"), data) == []
