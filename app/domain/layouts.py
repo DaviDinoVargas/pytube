@@ -34,6 +34,7 @@ class LayoutProfile:
     library_list: bool = False  # lista da biblioteca à esquerda do player
     compact_window: bool = False  # janela pequena que pode ficar por cima das outras
     related: bool = True  # "Mais da sua biblioteca" abaixo do player
+    inline_filters: bool = False  # filtros avançados em uma barra fixa no topo da biblioteca
 
     def sidebar_for(self, watching):
         return (self.sidebar_watching or self.sidebar) if watching else self.sidebar
@@ -50,7 +51,7 @@ PROFILES = {
         topbar_hidden_watching=True, related=False,
     ),
     # D. Tabela de gerenciamento com filtros avançados no topo
-    MANAGER: LayoutProfile(MANAGER, sidebar=SIDEBAR_ICONS, library_view="table", landing="library"),
+    MANAGER: LayoutProfile(MANAGER, sidebar=SIDEBAR_ICONS, library_view="table", landing="library", inline_filters=True),
     # E. Biblioteca à esquerda, player no centro, metadados/notas/tags à direita
     WORKSTATION: LayoutProfile(
         WORKSTATION, sidebar=SIDEBAR_ICONS, watch=WATCH_WORKSTATION, landing="watch",

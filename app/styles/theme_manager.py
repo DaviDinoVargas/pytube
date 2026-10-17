@@ -199,6 +199,23 @@ QToolButton#cinemaButton {{
 }}
 QToolButton#cinemaButton:hover {{ background: rgba(255, 255, 255, 80); }}
 QToolButton#cinemaButton:focus {{ border: 2px solid #FFFFFF; padding: 4px 10px; }}
+QFrame#filterBar {{ background: {t['surface_elevated']}; {raised} border-radius: {r['md']}px; }}
+QFrame#filterBar QLabel, QFrame#filterBar QWidget {{ background: transparent; }}
+QFrame#filterBar QComboBox, QFrame#filterBar QLineEdit {{ background: {t['input_bg']}; }}
+QTableView#libraryTable {{
+    background: {t['surface']}; border: {bw}px solid {t['border']}; border-radius: {r['md']}px; gridline-color: transparent;
+    selection-background-color: {t['accent_soft']}; selection-color: {t['text_primary']}; outline: none;
+}}
+QTableView#libraryTable::item {{ padding: 0 10px; border: none; }}
+QTableView#libraryTable::item:hover {{ background: {t['surface_hover']}; }}
+QTableView#libraryTable::item:selected {{ background: {t['accent_soft']}; color: {t['text_primary']}; }}
+QTableView#libraryTable:focus {{ border: {fw}px solid {t['focus']}; }}
+QHeaderView::section {{
+    background: {t['surface_elevated']}; color: {t['text_secondary']}; border: none; border-bottom: 1px solid {t['border']};
+    padding: 8px 10px; font-weight: 600;
+}}
+QHeaderView::section:hover {{ color: {t['text_primary']}; background: {t['surface_hover']}; }}
+QTableCornerButton::section {{ background: {t['surface_elevated']}; border: none; }}
 QFrame#playerNotice {{ background: {t['accent_soft']}; }}
 QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#sourceChip {{
@@ -285,7 +302,11 @@ QToolTip {{
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {t['border']}; border-radius: 4px; min-height: 30px; }}
 QScrollBar::handle:vertical:hover {{ background: {t['text_secondary']}; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+QScrollBar::handle:horizontal {{ background: {t['border']}; border-radius: 4px; min-width: 30px; }}
+QScrollBar::handle:horizontal:hover {{ background: {t['text_secondary']}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 """
 
 

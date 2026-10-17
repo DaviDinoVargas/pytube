@@ -163,11 +163,30 @@ class SettingsService:
     @property
     def library_view(self):
         value = str(self._s.value("library/view", "grid"))
-        return value if value in ("grid", "list") else "grid"
+        return value if value in ("grid", "list", "table") else "grid"
 
     @library_view.setter
     def library_view(self, value):
         self._s.setValue("library/view", value)
+
+    @property
+    def library_columns(self):
+        """Colunas visíveis da tabela da biblioteca (None = as padrão)."""
+        raw = str(self._s.value("library/columns", "") or "")
+        return tuple(c for c in raw.split(",") if c) or None
+
+    @library_columns.setter
+    def library_columns(self, value):
+        self._s.setValue("library/columns", ",".join(value))
+
+    @property
+    def library_table_header(self):
+        """Larguras e ordem das colunas da tabela (estado do cabeçalho, em base64)."""
+        return str(self._s.value("library/table_header", "") or "")
+
+    @library_table_header.setter
+    def library_table_header(self, value):
+        self._s.setValue("library/table_header", value)
 
     @property
     def default_rate(self):

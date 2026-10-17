@@ -46,6 +46,7 @@ class LibraryQuery:
     watch: str = WATCH_ALL
     period: str = PERIOD_ANY
     duration: str = DURATION_ANY
+    channel: str = ""  # trecho do nome do canal (sem acento e sem diferenciar maiúsculas)
     sort: str = SORT_NEWEST
 
     def active_filters(self):
@@ -63,6 +64,8 @@ class LibraryQuery:
             active.append(("period", self.period))
         if self.duration != DURATION_ANY:
             active.append(("duration", self.duration))
+        if self.channel.strip():
+            active.append(("channel", self.channel.strip()))
         return active
 
     def without(self, key, value=None):
@@ -79,13 +82,15 @@ class LibraryQuery:
             return replace(self, period=PERIOD_ANY)
         if key == "duration":
             return replace(self, duration=DURATION_ANY)
+        if key == "channel":
+            return replace(self, channel="")
         return self
 
     def cleared(self):
         """'Limpar filtros': mantém busca e ordenação."""
         return replace(
             self, state=STATE_ALL, category_ids=frozenset(), playlist_id=None, watch=WATCH_ALL,
-            period=PERIOD_ANY, duration=DURATION_ANY,
+            period=PERIOD_ANY, duration=DURATION_ANY, channel="",
         )
 
     @property
@@ -176,6 +181,7 @@ def apply_query(query, data, now=None):
     category_names = {c.id: c.name for c in data.categories}
     playlist_names = {p.id: p.name for p in data.playlists}
     needle_words = [fold(w) for w in query.text.split() if w.strip()]
+    channel_needle = fold(query.channel)
     in_playlist = None
     order_in_playlist = {}
     if query.playlist_id is not None:
@@ -197,6 +203,8 @@ def apply_query(query, data, now=None):
         if not _watch_ok(progress, query.watch):
             continue
         if not _duration_ok(video, query.duration) or not _period_ok(video, query.period, now):
+            continue
+        if channel_needle and channel_needle not in fold(video.channel):
             continue
         if needle_words:
             haystack = search_text_of(video, data, category_names, playlist_names)

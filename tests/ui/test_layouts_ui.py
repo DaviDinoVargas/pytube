@@ -14,11 +14,16 @@ def w(window_factory):
     return window_factory()
 
 
-def add(w, i, title=None):
+def add(w, i, title=None, size=None):
     """Cada vídeo tem canal próprio, para os relacionados dependerem só do que o teste configurar."""
     video, _ = w.library.save_info(FakeProvider("f", title=title or f"Vídeo {i}").fetch_info(f"vid{i:08d}"))
     video.channel = f"Canal {i}"
     w.library.store.update_video(video)
+    if size is not None:
+        f = w.library.layout.videos / f"{i}.mp4"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"0" * size)
+        video = w.library.attach_local_file(video.id, f, "720p")
     return video
 
 
@@ -403,3 +408,179 @@ def test_idle_watcher_poke_and_timeout(qtbot):
     qtbot.waitUntil(lambda: states == [False, True, False], timeout=3000)
     watcher.stop()
     assert states[-1] is True and not watcher.running
+
+
+# ======================= D. Gerenciador de biblioteca =======================
+from app.ui.widgets.library_table import LibraryTable  # noqa: E402
+
+
+@pytest.fixture
+def manager(w):
+    w.resize(1400, 850)
+    choose(w, "manager")
+    return w
+
+
+def table_of(w):
+    page = w.pages["library"]
+    assert page._table is not None
+    return page._table
+
+
+def test_manager_opens_the_library_as_a_table_with_inline_filters(manager):
+    page = manager.pages["library"]
+    add(manager, 1)
+    page.refresh()
+    assert manager.current_page == "library" and page._view == "table"
+    assert not page.filter_bar.isHidden() and page.filter_button.isHidden()
+    assert isinstance(table_of(manager), LibraryTable) and page.table_button.isChecked()
+
+
+def test_manager_does_not_overwrite_the_user_view_preference(manager, settings):
+    assert settings.library_view == "grid"
+    choose(manager, "classic")
+    page = manager.pages["library"]
+    manager.show_page("library")
+    assert page._view == "grid" and page.filter_bar.isHidden() and not page.filter_button.isHidden()
+
+
+def test_table_columns_show_title_duration_category_date_state_and_file(manager):
+    a = add(manager, 1, "Aula Python")
+    cat = manager.org.create_category("Estudo")
+    manager.org.assign_categories([a.id], add=[cat.id])
+    f = manager.library.layout.videos / "a.mp4"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_bytes(b"0" * 2048)
+    manager.library.attach_local_file(a.id, f, "720p")
+    manager.pages["library"].refresh()
+    table = table_of(manager)
+    model = table.model()
+    headers = [model.headerData(i, Qt.Horizontal) for i in range(model.columnCount())]
+    assert headers == ["Título", "Duração", "Categorias", "Adicionado em", "Estado", "Arquivo"]
+    row = [model.index(0, c).data() for c in range(model.columnCount())]
+    assert row[0] == "Aula Python" and row[1] == "3:32" and row[2] == "Estudo" and "Baixado" in row[4] and row[5].endswith("a.mp4")
+
+
+def test_table_saved_only_and_missing_states(manager):
+    saved = add(manager, 1)
+    gone = add(manager, 2, size=100)
+    (manager.library.layout.videos / "2.mp4").unlink()
+    manager.pages["library"].refresh()
+    model = table_of(manager).model()
+    states = {model.index(r, 0).data(): model.index(r, 4).data() for r in range(model.rowCount())}
+    assert states[saved.title] == "Só salvo" and "ausente" in states[gone.title]
+
+
+def test_header_click_sorts_locally_and_numeric_columns_sort_by_value(manager):
+    for i, title in enumerate(["Banana", "Abacate", "Cereja"], 1):
+        add(manager, i, title)
+    manager.pages["library"].refresh()
+    table = table_of(manager)
+    assert table.sort_state()[0] == -1  # sem ordenação própria: vale a da barra
+    table.horizontalHeader().sectionClicked.emit(0)
+    table.sortByColumn(0, Qt.AscendingOrder)
+    assert [table.model().index(r, 0).data() for r in range(3)] == ["Abacate", "Banana", "Cereja"]
+    table.sortByColumn(0, Qt.DescendingOrder)
+    assert table.model().index(0, 0).data() == "Cereja"
+
+
+def test_double_click_and_enter_open_the_video(manager):
+    a = add(manager, 1, "Abrir")
+    manager.pages["library"].refresh()
+    table = table_of(manager)
+    table.doubleClicked.emit(table.model().index(0, 0))
+    assert manager.current_page == "watch" and manager.watch_page.player.video.id == a.id
+
+
+def test_selecting_rows_shows_the_bulk_bar_and_bulk_remove_asks_once(manager, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    a, b, c = add(manager, 1), add(manager, 2), add(manager, 3)
+    page = manager.pages["library"]
+    page.refresh()
+    assert page.bulk_bar.isHidden()
+    table = table_of(manager)
+    table.select_ids([a.id, b.id])
+    assert page.selected_ids == [a.id, b.id] and not page.bulk_bar.isHidden()
+    asked = []
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: asked.append(self.text()) or 0)
+    monkeypatch.setattr(QMessageBox, "clickedButton", lambda self: self.buttons()[0])
+    table.action_requested.emit([a.id, b.id], "remove")
+    assert len(asked) == 1 and [v.id for v in manager.library.list_videos()] == [c.id]
+
+
+def test_row_actions_watch_and_unwatch_use_the_video_actions(manager):
+    a = add(manager, 1)
+    page = manager.pages["library"]
+    page.refresh()
+    table_of(manager).action_requested.emit([a.id], "watch")
+    assert manager.progress.get(a.id).watched is True
+    table_of(manager).action_requested.emit([a.id], "unwatch")
+    assert manager.progress.get(a.id).watched is False
+
+
+def test_column_choice_is_saved_and_title_cannot_be_hidden(manager, settings):
+    add(manager, 1)
+    page = manager.pages["library"]
+    page.refresh()
+    table = table_of(manager)
+    table._toggle_column("channel", True)
+    table._toggle_column("added", False)
+    assert "channel" in settings.library_columns and "added" not in settings.library_columns
+    assert table.columns == ["title", "channel", "duration", "categories", "state", "file"]
+    menu_actions = {x.text(): x for x in table.build_columns_menu().actions()}
+    assert menu_actions["Título"].isEnabled() is False and menu_actions["Canal"].isChecked()
+
+
+def test_row_context_menu_has_open_watch_organize_and_remove(manager):
+    a = add(manager, 1, size=100)
+    manager.pages["library"].refresh()
+    table = table_of(manager)
+    table.select_ids([a.id])
+    menu = table.build_row_menu(table.model().index(0, 0))
+    labels = [x.text() for x in menu.actions() if x.text()]
+    assert "Abrir" in labels[0] and any("pasta" in lbl for lbl in labels) and labels[-1].startswith("Remover")
+    assert any(x.menu() is not None for x in menu.actions())  # categorias e playlists
+
+
+def test_columns_persist_across_refreshes(manager):
+    add(manager, 1)
+    page = manager.pages["library"]
+    page.refresh()
+    table_of(manager)._toggle_column("size", True)
+    page.refresh()
+    assert "size" in table_of(manager).columns
+
+
+def test_inline_filter_bar_filters_by_state_and_channel_and_shows_chips(manager, qtbot):
+    a, b = add(manager, 1, "Um"), add(manager, 2, "Dois")
+    page = manager.pages["library"]
+    page.refresh()
+    bar = page.filter_bar
+    bar.channel_edit.setText("canal 2")
+    qtbot.waitUntil(lambda: manager.query_state.query.channel == "canal 2", timeout=3000)
+    page.refresh()
+    assert table_of(manager).video_ids() == [b.id]
+    assert any("Canal: canal 2" in c.text() for c in page.chips.chips)
+    bar.clear_button.click()
+    page.refresh()
+    assert set(table_of(manager).video_ids()) == {a.id, b.id} and bar.channel_edit.text() == ""
+
+
+def test_filter_bar_reflects_state_changes_from_elsewhere(manager):
+    from app.domain.query import STATE_DOWNLOADED
+
+    page = manager.pages["library"]
+    manager.query_state.focus(state=STATE_DOWNLOADED)
+    page.refresh()
+    assert page.filter_bar.state_combo.currentData() == STATE_DOWNLOADED
+
+
+def test_table_view_can_be_chosen_in_the_classic_layout_and_persists(w, settings):
+    add(w, 1)
+    w.show_page("library")
+    page = w.pages["library"]
+    page.table_button.click()
+    assert settings.library_view == "table" and page._table is not None
+    page.grid_button.click()
+    assert settings.library_view == "grid" and page._table is None

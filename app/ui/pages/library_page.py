@@ -13,6 +13,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.domain.query import SORTS
+from app.ui.widgets.filter_bar import FilterBar
+from app.ui.widgets.library_table import LibraryTable, TableRow
+from app.ui.widgets.video_card import format_added
 from app.domain.states import video_state
 from app.styles.icons import icon
 from app.ui.pages.base import EmptyState
@@ -57,6 +60,8 @@ class LibraryPage(VideoPage):
         self._selected = set()
         self._shown = []
         self._view = settings.library_view
+        self._inline_filters = False
+        self._table = None
         super().__init__(translator, library, tokens, **kwargs)
 
         # barra de ferramentas
@@ -72,8 +77,10 @@ class LibraryPage(VideoPage):
         self.select_button.toggled.connect(self.set_selecting)
         bar.addWidget(self.select_button)
         self.view_group = QButtonGroup(self)
-        self.grid_button, self.list_button = QToolButton(), QToolButton()
-        for button, mode, name in ((self.grid_button, "grid", "panel"), (self.list_button, "list", "playlists")):
+        self.grid_button, self.list_button, self.table_button = QToolButton(), QToolButton(), QToolButton()
+        for button, mode, name in (
+            (self.grid_button, "grid", "panel"), (self.list_button, "list", "playlists"), (self.table_button, "table", "table"),
+        ):
             button.setObjectName("toolbarToggle")
             button.setCheckable(True)
             button.setIconSize(QSize(18, 18))
@@ -94,6 +101,10 @@ class LibraryPage(VideoPage):
 
         self.panel = FilterPanel(translator)
         self.panel.changed.connect(self._state.set_query)
+
+        self.filter_bar = FilterBar(translator)  # filtros avançados fixos no topo (layout Gerenciador)
+        self.filter_bar.changed.connect(self._state.set_query)
+        self.filter_bar.hide()
 
         self.chips = ChipBar(translator)
         self.chips.remove_requested.connect(self._state.remove_filter)
@@ -122,7 +133,7 @@ class LibraryPage(VideoPage):
         self.remove_button.clicked.connect(self.remove_selected)
         self.done_button = QPushButton()
         self.done_button.setObjectName("primary")
-        self.done_button.clicked.connect(lambda: self.select_button.setChecked(False))
+        self.done_button.clicked.connect(self._done_selecting)
         bulk.addWidget(self.selected_label)
         bulk.addWidget(self.select_all_button)
         bulk.addStretch(1)
@@ -130,6 +141,7 @@ class LibraryPage(VideoPage):
             bulk.addWidget(widget)
         self.bulk_bar.hide()
         self.body.insertWidget(2, self.bulk_bar)
+        self.body.insertWidget(1, self.filter_bar)
 
         self.no_results = EmptyState(translator, "library_no_results")
         self.no_results_clear = QPushButton()
@@ -173,6 +185,9 @@ class LibraryPage(VideoPage):
         self.no_results_clear.setVisible(query.is_filtered)
         if not videos:
             return
+        if self._view == "table":
+            self._render_table(videos)
+            return
         if self._view == "list":
             widget = RowList()
             widget.set_rows([self._make_row(v) for v in videos])
@@ -181,6 +196,55 @@ class LibraryPage(VideoPage):
         self._apply_selection_mode(widget)
         self.body.addWidget(widget)
         self.body.addStretch(1)
+
+    def _render_table(self, videos):
+        by_video = self._categories_by_video()
+        language = self._tr.language
+        rows = []
+        for video in videos:
+            video = self._library.validate_local(video)
+            watch, fraction = self.watch_info(video)
+            path = self._library.local_path(video, must_exist=False)
+            rows.append(TableRow(
+                video, video_state(video, self._download_status(video.id)),
+                ", ".join(sorted(name for name, _color in by_video.get(video.id, ()))),
+                format_added(video.added_at, language), str(path) if path is not None and video.local_path else "", fraction,
+            ))
+        table = LibraryTable(self._tr, self._organize)
+        columns = self._settings.library_columns
+        if columns:
+            table.set_columns(columns)
+        table.restore_header_state(self._settings.library_table_header)
+        table.set_rows(rows)
+        table.select_ids(self._selected)
+        table.open_requested.connect(self.video_opened)
+        table.action_requested.connect(self._on_table_action)
+        table.selection_ids_changed.connect(self._on_table_selection)
+        table.columns_changed.connect(self._on_columns_changed)
+        table.horizontalHeader().sectionResized.connect(lambda *_: self._save_header())
+        table.horizontalHeader().sectionMoved.connect(lambda *_: self._save_header())
+        self._table = table
+        self.body.addWidget(table, 1)  # a tabela ocupa a altura que sobrar
+
+    def _on_table_selection(self, ids):
+        self._selected = set(ids)
+        self._update_bulk()
+
+    def _on_table_action(self, ids, key):
+        if key == "remove":
+            self._selected = set(ids)
+            self.remove_selected()
+            return
+        for video_id in ids:
+            self.video_action.emit(video_id, key)
+
+    def _on_columns_changed(self, columns):
+        self._settings.library_columns = columns
+        self._save_header()
+
+    def _save_header(self):
+        if self._table is not None:
+            self._settings.library_table_header = self._table.header_state()
 
     def make_card(self, video):
         card = super().make_card(video)
@@ -210,6 +274,7 @@ class LibraryPage(VideoPage):
         return out
 
     def _clear_body(self):
+        self._table = None
         while self.body.count() > self._fixed_items:  # fixos: barra, chips, ações em lote, estados vazios
             item = self.body.takeAt(self._fixed_items)
             widget = item.widget()
@@ -246,7 +311,29 @@ class LibraryPage(VideoPage):
         self.filter_button.setText(t("filter.button") + (f"  ({active})" if active else ""))
         self.grid_button.setChecked(self._view == "grid")
         self.list_button.setChecked(self._view == "list")
+        self.table_button.setChecked(self._view == "table")
+        self.filter_bar.set_options(self._org.categories(), self._org.playlists()) if self._filter_options_stale() else None
+        self.filter_bar.set_query(query)
+        self.filter_bar.setVisible(self._inline_filters)
+        self.filter_button.setVisible(not self._inline_filters)
+        self.select_button.setVisible(self._view != "table")  # na tabela a seleção é pelas próprias linhas
         self._update_bulk()
+
+    def _filter_options_stale(self):
+        key = (tuple((c.id, c.name) for c in self._org.categories()), tuple((p.id, p.name) for p in self._org.playlists()))
+        if key == getattr(self, "_filter_options_key", None):
+            return False
+        self._filter_options_key = key
+        return True
+
+    def set_layout(self, profile):
+        """O layout Gerenciador abre a biblioteca como tabela e com os filtros avançados fixos no topo."""
+        self._inline_filters = profile.inline_filters
+        view = profile.library_view or self._settings.library_view
+        if view != self._view or self._inline_filters != self.filter_bar.isVisibleTo(self):
+            self._view = view
+            self._update_controls()
+            self.mark_dirty()
 
     def _show_filters(self):
         self.panel.set_query(self._state.query)
@@ -258,8 +345,13 @@ class LibraryPage(VideoPage):
         if mode != self._view:
             self._view = mode
             self._settings.library_view = mode
+            if mode == "table":
+                self._selecting = False
+                self.select_button.setChecked(False)
         self.grid_button.setChecked(mode == "grid")
         self.list_button.setChecked(mode == "list")
+        self.table_button.setChecked(mode == "table")
+        self._update_controls()
         self.mark_dirty()
 
     # ------------------------------------------------------------------------------------
@@ -279,6 +371,11 @@ class LibraryPage(VideoPage):
             item.set_selectable(self._selecting)
         self._update_bulk()
 
+    def _done_selecting(self):
+        self.select_button.setChecked(False)
+        if self._table is not None:
+            self._table.clearSelection()
+
     def _apply_selection_mode(self, widget):
         items = widget.cards if isinstance(widget, VideoGrid) else widget.rows
         for item in items:
@@ -291,13 +388,16 @@ class LibraryPage(VideoPage):
         self._update_bulk()
 
     def select_all(self):
+        if self._table is not None:
+            self._table.selectAll()
+            return
         for item in self.items():
             item.set_selected(True)
 
     def _update_bulk(self):
         t = self._tr.t
         n = len(self._selected)
-        self.bulk_bar.setVisible(self._selecting)
+        self.bulk_bar.setVisible(self._selecting or (self._view == "table" and n > 0))
         self.selected_label.setText(t("library.selected_one") if n == 1 else t("library.selected_many", count=n))
         for button in (self.categories_button, self.playlist_button, self.remove_button):
             button.setEnabled(n > 0)
@@ -336,7 +436,7 @@ class LibraryPage(VideoPage):
     # ------------------------------------------------------------------------------------
     def set_tokens(self, tokens):
         self._tokens = tokens
-        for button in (self.grid_button, self.list_button):
+        for button in (self.grid_button, self.list_button, self.table_button):
             button.setIcon(icon(button.property("iconName"), tokens["text_primary"], 18))
         super().set_tokens(tokens)
 
@@ -350,6 +450,8 @@ class LibraryPage(VideoPage):
         self.grid_button.setAccessibleName(t("library.view_grid"))
         self.list_button.setToolTip(t("library.view_list"))
         self.list_button.setAccessibleName(t("library.view_list"))
+        self.table_button.setToolTip(t("library.view_table"))
+        self.table_button.setAccessibleName(t("library.view_table"))
         self.sort_combo.blockSignals(True)
         self.sort_combo.clear()
         for sort in SORTS:
@@ -364,4 +466,6 @@ class LibraryPage(VideoPage):
         self.no_results.retranslate()
         self.no_results_clear.setText(t("filter.clear"))
         self.panel.retranslate()
+        self.filter_bar.retranslate()
+        self._filter_options_key = None
         self._update_controls()

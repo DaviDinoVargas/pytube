@@ -28,6 +28,8 @@ class ChipBar(QWidget):
                 label = category_names.get(value, "?")
             elif key == "playlist":
                 label = playlist_names.get(value, "?")
+            elif key == "channel":
+                label = t("filter.chip_channel", channel=value)
             else:
                 label = t(f"filter.{key}_{value}")
             out.append((key, value, label))
