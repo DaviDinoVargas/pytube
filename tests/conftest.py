@@ -1,6 +1,8 @@
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Chromium do QtWebEngine em contêiner sem GPU/sandbox (só nos testes)
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox --disable-gpu --disable-software-rasterizer")
 
 import pytest
 from PySide6.QtCore import QSettings
