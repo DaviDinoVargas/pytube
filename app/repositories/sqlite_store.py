@@ -64,6 +64,10 @@ MIGRATIONS = [
     CREATE INDEX idx_videos_added ON videos(added_at);
     CREATE INDEX idx_videos_status ON videos(local_status);
     """,
+    # v2: anotações por vídeo
+    """
+    ALTER TABLE videos ADD COLUMN notes TEXT NOT NULL DEFAULT ''
+    """,
 ]
 
 _VIDEO_COLS = [f.name for f in fields(Video) if f.name != "id"]

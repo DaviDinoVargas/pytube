@@ -30,6 +30,7 @@ class Video:
     local_quality: str | None = None
     local_status: str = LOCAL_NONE
     validated_at: str | None = None
+    notes: str = ""  # anotações do usuário sobre o vídeo
     id: int | None = None
 
 

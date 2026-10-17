@@ -13,6 +13,7 @@ from app.services.storage_service import STATUS_READY
 from app.services.thumbnail_service import ThumbnailService, thumbnail_name
 
 SORT_NEWEST = "newest"
+NOTES_LIMIT = 20000  # caracteres por vídeo
 _STREAM_HOSTS = ("googlevideo.com", "youtube.com", "ytimg.com")
 
 
@@ -115,6 +116,17 @@ class LibraryService(QObject):
         if existing:
             return existing, False
         return self.save_info(self.fetch_info(video_id))
+
+    # -- anotações ----------------------------------------------------------
+    def set_notes(self, video_id, text):
+        """Grava as anotações do vídeo (até NOTES_LIMIT caracteres). Não dispara `changed`: digitar não deve
+        redesenhar todas as páginas. Devolve o texto gravado, ou None se o vídeo não existe."""
+        video = self.get(video_id)
+        if video is None:
+            return None
+        video.notes = (text or "")[:NOTES_LIMIT]
+        self.store.update_video(video)
+        return video.notes
 
     # -- remover ------------------------------------------------------------
     def remove(self, video_id, delete_file=False):

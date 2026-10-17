@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: Video.notes
 EXPORT_KEYS = ("videos", "categories", "playlists", "video_categories", "playlist_items", "progress")
 
 
