@@ -4,14 +4,20 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.domain import states
+from app.domain import layouts, recommend
 from app.domain.history import SMART_PLAYLISTS, progress_fraction, watch_status
-from app.domain.query import LibraryQuery
+from app.domain.query import LibraryQuery, apply_query
+from app.domain.states import format_duration
 from app.domain.states import video_state
 from app.ui.pages.base import EmptyState, Page
+from app.ui.pages.categories_page import CollectionCard, count_text
+from app.ui.widgets.hero_banner import HeroBanner
+from app.ui.widgets.thumb_row import ThumbRow, link_button, title_label
 from app.ui.widgets.video_card import VideoCard
 from app.ui.widgets.video_grid import VideoGrid
 
 SECTION_LIMIT = 8
+ROW_LIMIT = 14  # itens por fileira no layout Streaming
 
 
 class VideoPage(Page):
@@ -125,18 +131,28 @@ class DownloadedPage(VideoPage):
 class HomePage(VideoPage):
     key = "home"
     category_all_requested = Signal(int)
+    playlist_opened = Signal(int)
 
     def __init__(self, *args, org=None, **kwargs):
         self._org = org
+        self._variant = layouts.HOME_CATEGORIES
         super().__init__(*args, **kwargs)
 
     def videos(self):
         return self._library.list_videos()
 
+    def set_layout(self, profile):
+        if profile.home != self._variant:
+            self._variant = profile.home
+            self.mark_dirty()
+
     def render(self, videos):
         self._clear_body()
         self.empty.setVisible(not videos)
         if not videos:
+            return
+        if self._variant == layouts.HOME_STREAMING and self._org is not None:
+            self._render_streaming()
             return
         sections = [("home.section_recent", videos[:SECTION_LIMIT])]
         downloaded = [v for v in videos if self._library.validate_local(v).local_status == "ok"]
@@ -174,3 +190,68 @@ class HomePage(VideoPage):
         column.addLayout(head)
         column.addWidget(self.make_grid(items))
         return box
+
+    # -- layout Streaming: destaque, fileiras horizontais e recomendações locais -------------------
+    def _render_streaming(self):
+        t = self._tr.t
+        data = self._org.load_data()
+        featured = recommend.featured(data)
+        if featured is not None:
+            self.body.addWidget(self._hero(featured, data))
+        rows = []
+        in_progress = apply_query(SMART_PLAYLISTS["continue"], data)
+        if in_progress:
+            rows.append((t("stream.row_continue"), in_progress, False, None))
+        rows.append((t("home.section_recent"), apply_query(LibraryQuery(), data), False, None))
+        ready = [v for v in apply_query(SMART_PLAYLISTS["unwatched"], data) if self._library.validate_local(v).local_status == "ok"]
+        if ready:
+            rows.append((t("stream.row_ready"), ready, False, None))
+        base, because = recommend.because_you_watched(data, ROW_LIMIT)
+        if base is not None:
+            rows.append((t("stream.row_because", title=base.title), because, False, None))
+        for title, items, rich, category in rows:
+            self.body.addWidget(self._row(title, items[:ROW_LIMIT], rich, category))
+        playlists = self._org.playlists()
+        if playlists:
+            self.body.addWidget(self._playlist_row(playlists))
+        for category in data.categories:
+            items = apply_query(LibraryQuery(category_ids=frozenset({category.id})), data)
+            if items:
+                self.body.addWidget(self._row(category.name, items[:ROW_LIMIT], False, category))
+        self.body.addStretch(1)
+
+    def _hero(self, video, data):
+        t = self._tr.t
+        position = recommend.resume_label_position(video, data)
+        button = t("stream.continue_from", time=format_duration(position)) if position else t("stream.watch")
+        meta = " · ".join(x for x in (video.channel, format_duration(video.duration)) if x)
+        hero = HeroBanner(
+            self._tokens, video, self._library.thumbnail_path(video), t("stream.featured"), meta, button,
+            radius=self._tokens["radius"]["lg"],
+        )
+        hero.open_requested.connect(self.video_opened)
+        return hero
+
+    def _row(self, title, items, rich, category):
+        cards = [self.make_card(v) for v in items]
+        if category is not None and category.color:
+            heading = title_label(f'<span style="color:{category.color}">●</span> {html.escape(category.name)}', rich=True)
+        else:
+            heading = title_label(title)
+        see_all = None
+        if category is not None:
+            see_all = link_button(self._tr.t("home.see_all"), lambda _=False, cid=category.id: self.category_all_requested.emit(cid))
+        return ThumbRow(self._tokens, heading, cards, see_all, self._tr.t("stream.prev"), self._tr.t("stream.next"))
+
+    def _playlist_row(self, playlists):
+        counts = self._org.playlist_counts()
+        cards = []
+        for playlist in playlists[:ROW_LIMIT]:
+            count = counts.get(playlist.id, 0)
+            card = CollectionCard(
+                self._tr, self._tokens, playlist.id, playlist.name, playlist.description,
+                count_text(self._tr, count), None, menu=False,
+            )
+            card.opened.connect(self.playlist_opened)
+            cards.append(card)
+        return ThumbRow(self._tokens, title_label(self._tr.t("stream.row_playlists")), cards, None, self._tr.t("stream.prev"), self._tr.t("stream.next"))
