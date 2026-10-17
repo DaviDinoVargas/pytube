@@ -27,7 +27,7 @@ from app.styles.icons import icon
 from app.ui.errors import describe_error
 from app.ui.pages.base import Page
 from app.ui.widgets.download_row import status_text
-from app.ui.widgets.player_area import PlayerArea
+from app.ui.player.player_widget import PlayerWidget
 from app.ui.widgets.video_card import format_added
 from app.ui.workers import run_async
 
@@ -60,7 +60,7 @@ class WatchPage(Page):
     back_requested = Signal()
     message = Signal(str, bool)  # texto, é_erro
 
-    def __init__(self, translator, library, tokens, downloads, consent=lambda: True):
+    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None):
         super().__init__(translator)
         self._library = library
         self._downloads = downloads
@@ -69,6 +69,7 @@ class WatchPage(Page):
         self._streams_error = False
         self._streams_token = 0
         self._player_height = None
+        self._player_source = None
         self._user_height = None  # só a escolha explícita do usuário; o padrão automático não conta
         self._tokens = tokens
         self._info = None
@@ -131,8 +132,10 @@ class WatchPage(Page):
         col = QVBoxLayout(content)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(12)
-        self.player = PlayerArea(translator, tokens)
+        self.player = PlayerWidget(translator, tokens, library, progress, settings, **(player_options or {}))
         self.player.browser_requested.connect(self.open_in_browser)
+        self.player.folder_requested.connect(self._open_local_folder)
+        self.player.height_changed.connect(self.set_player_height)
         col.addWidget(self.player)
         self.title_label = QLabel()
         self.title_label.setObjectName("watchTitle")
@@ -231,8 +234,28 @@ class WatchPage(Page):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # o player ocupa no máximo ~58% da altura: título, ações e download continuam à vista
-        self.player.set_max_height(self.height() * 0.58)
+        # o player ocupa no máximo ~62% da altura: título, ações e download continuam à vista
+        self.player.set_max_height(self.height() * 0.62)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if not event.spontaneous():  # sair da página para o vídeo; minimizar a janela não conta
+            self.player.stop()
+            self._player_source = None
+
+    def _sync_player(self):
+        """Abre o vídeo no player só quando ele muda; salvar/remover da biblioteca não reinicia a reprodução."""
+        source_id = self._info.source_id
+        if source_id != self._player_source or self.player.is_idle():
+            self._player_source = source_id
+            self.player.open(source_id, self._video)
+        else:
+            self.player.attach_video(self._video)
+
+    def _open_local_folder(self):
+        path = self._library.local_path(self._video) if self._video is not None else None
+        if path is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
     # -- ciclo de vida ------------------------------------------------------------
     def open_source_id(self, source_id):
@@ -300,11 +323,11 @@ class WatchPage(Page):
             if added:
                 parts.append(t("card.added", date=added))
         self.meta_label.setText(" · ".join(parts))
-        self.player.set_thumbnail(self._library.thumbnail_path(self._video) if self._video else None)
         self._render_actions()
         self._render_description()
         self._init_streams()
         self.stack.setCurrentIndex(_CONTENT)
+        self._sync_player()
 
     def _render_actions(self):
         t = self._tr.t

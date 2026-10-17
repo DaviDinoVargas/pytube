@@ -149,7 +149,12 @@ def make_window(qtbot, settings, manager):
     from app.infrastructure.providers.chain import ProviderChain
     from tests.fakes import FakeProvider
 
-    w = create_window(QApplication.instance(), settings, manager, ProviderChain([FakeProvider("fake")]))
+    from tests.fakes import make_stub_player
+
+    w = create_window(
+        QApplication.instance(), settings, manager, ProviderChain([FakeProvider("fake")]),
+        player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
+    )
     qtbot.addWidget(w)
     w.show()
     return w

@@ -1,11 +1,13 @@
 from PySide6.QtCore import QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from app import APP_NAME
 from app.infrastructure.media.ffmpeg import MediaError, bundled_root, locate
 from app.services.download_service import DownloadManager
 from app.services.library_service import LibraryService
+from app.services.progress_service import ProgressService
+from app.ui.player import shortcuts
 from app.styles.icons import icon
 from app.ui.pages.downloads_page import DownloadsPage
 from app.ui.pages.placeholder_pages import CategoriesPage, ContinuePage, HistoryPage, PlaylistsPage
@@ -22,11 +24,12 @@ DEFAULT_PAGE = "home"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings, translator, theme, storage, providers, thumbnails=None, tools_getter=None):
+    def __init__(self, settings, translator, theme, storage, providers, thumbnails=None, tools_getter=None, player_options=None):
         super().__init__()
         self._settings = settings
         self._storage = storage
         self.library = LibraryService(storage, providers, thumbnails)
+        self.progress = ProgressService(self.library)
         self._tools = None
         self._tools_getter = tools_getter
         self.downloads = DownloadManager(
@@ -75,7 +78,9 @@ class MainWindow(QMainWindow):
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
-        self.watch_page = WatchPage(translator, library, tokens, self.downloads, self._ask_download_consent)
+        self.watch_page = WatchPage(
+            translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options
+        )
         self.watch_page.back_requested.connect(self._go_back)
         self.watch_page.message.connect(self.top_bar.show_message)
         self._add_page(self.watch_page)
@@ -214,7 +219,18 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.downloads.shutdown()
+        self.watch_page.player.shutdown()  # grava a posição e encerra o Chromium na ordem certa
         super().closeEvent(event)
+
+    def keyPressEvent(self, event):
+        """Atalhos do player. Só chegam aqui as teclas que o widget em foco não usou (campos de texto ficam livres)."""
+        if self.current_page == "watch":
+            action = shortcuts.action_for(event.key(), event.modifiers())
+            if action and not shortcuts.should_ignore(QApplication.focusWidget(), action):
+                self.watch_page.player.perform(action)
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
     def _on_library_changed(self):
         for page in self.pages.values():

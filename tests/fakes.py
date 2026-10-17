@@ -38,6 +38,8 @@ class FakeProvider(VideoProvider):
         self.payload = payload
         self.fetch_calls = 0
         self.downloads = []
+        self.url_error = None
+        self.url_template = "https://rr1---sn-abc.googlevideo.com/videoplayback?id={id}&itag={itag}"
 
     def is_available(self):
         return self._available
@@ -57,6 +59,11 @@ class FakeProvider(VideoProvider):
             provider=self.name,
             streams=list(self._streams),
         )
+
+    def stream_url(self, video_id, stream):
+        if self.url_error:
+            raise ProviderError(self.url_error, "simulado")
+        return self.url_template.format(id=video_id, itag=stream.format_id)
 
     def download_stream(self, video_id, stream, dest, on_progress, cancel_event):
         self.downloads.append((video_id, stream.format_id))
@@ -124,3 +131,87 @@ class MediaProvider(FakeProvider):
         finally:
             with self._guard:
                 self.running -= 1
+
+
+def _stub_player_class():
+    from app.ui.player.base import PlayerBackend
+
+    class StubPlayer(PlayerBackend):
+        """Motor de reprodução falso: registra os comandos e deixa o teste emitir os eventos."""
+
+        def __init__(self, can_quality=False):
+            super().__init__()
+            self.calls = []
+            self._can_quality = can_quality
+            self._playing = False
+            self._pos = 0.0
+            self._dur = 0.0
+
+        def _log(self, name, *args):
+            self.calls.append((name, *args))
+
+        def load_file(self, path, start=0.0, autoplay=True):
+            self._log("load_file", str(path), start)
+            self._playing = autoplay
+
+        def load_url(self, url, start=0.0, autoplay=True):
+            self._log("load_url", url, start)
+            self._playing = autoplay
+
+        def load(self, video_id, start=0.0):
+            self._log("load", video_id, start)
+
+        def play(self):
+            self._log("play")
+            self._playing = True
+            self.state_changed.emit(True)
+
+        def pause(self):
+            self._log("pause")
+            if self._playing:
+                self._playing = False
+                self.state_changed.emit(False)
+
+        def stop(self):
+            self._log("stop")
+            self._playing = False
+
+        def shutdown(self):
+            self._log("shutdown")
+
+        def seek(self, seconds):
+            self._log("seek", seconds)
+            self._pos = seconds
+
+        def set_volume(self, percent):
+            self._log("volume", percent)
+
+        def set_muted(self, muted):
+            self._log("muted", muted)
+
+        def set_rate(self, rate):
+            self._log("rate", rate)
+
+        def set_quality(self, height):
+            self._log("quality", height)
+
+        def can_change_quality(self):
+            return self._can_quality
+
+        def position(self):
+            return self._pos
+
+        def duration(self):
+            return self._dur
+
+        def is_playing(self):
+            return self._playing
+
+        def names(self):
+            return [c[0] for c in self.calls]
+
+    return StubPlayer
+
+
+def make_stub_player(**kwargs):
+    return _stub_player_class()(**kwargs)

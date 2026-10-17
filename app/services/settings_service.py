@@ -109,3 +109,14 @@ class SettingsService:
     @ffmpeg_path.setter
     def ffmpeg_path(self, value):
         self._s.setValue("tools/ffmpeg_path", value)
+
+    @property
+    def player_volume(self):
+        try:
+            return min(100, max(0, int(self._s.value("player/volume", 80))))
+        except (TypeError, ValueError):
+            return 80
+
+    @player_volume.setter
+    def player_volume(self, value):
+        self._s.setValue("player/volume", int(value))

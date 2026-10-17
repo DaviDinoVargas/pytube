@@ -162,14 +162,26 @@ def test_open_link_save_and_see_it_in_library(qtbot, window_factory, fake_provid
     assert not w.pages["library"].empty.isVisible()
 
 
-def test_opening_saved_video_does_not_hit_the_network(qtbot, window_factory, fake_provider):
+def test_opening_saved_video_shows_content_without_waiting_for_the_network(qtbot, window_factory, fake_provider):
+    import threading
+
     w = window_factory()
     w.library.save_info(fake_provider.fetch_info(VID))
-    calls = fake_provider.fetch_calls
+    gate = threading.Event()
+    original = fake_provider.fetch_info
+
+    def slow_fetch(video_id):
+        gate.wait(10)  # a rede está lenta
+        return original(video_id)
+
+    fake_provider.fetch_info = slow_fetch
     open_url(w, f"https://youtu.be/{VID}")
-    wait_content(qtbot, w)
-    assert fake_provider.fetch_calls == calls
-    assert w.watch_page.save_button.text() == "Remover da biblioteca"
+    wait_content(qtbot, w)  # o conteúdo (vindo da biblioteca) aparece com a busca ainda pendente
+    page = w.watch_page
+    assert page.save_button.text() == "Remover da biblioteca" and page.title_label.text() == "Vídeo de teste"
+    assert page.quality_combo.currentData() is None and "Carregando" in page.quality_combo.currentText()
+    gate.set()  # a rede responde: só então as qualidades aparecem
+    qtbot.waitUntil(lambda: page.quality_combo.currentData() is not None, timeout=10000)
 
 
 def test_remove_from_watch_page_keeps_page_and_allows_saving_again(qtbot, window_factory, fake_provider):
@@ -338,17 +350,17 @@ def test_save_url_from_topbar_while_unconfigured_is_safe(qtbot, window_factory):
     assert not w.watch_page.save_button.isEnabled()  # sem pasta de biblioteca não dá para salvar
 
 
-def test_player_area_keeps_16_9(qtbot, window_factory, fake_provider):
+def test_player_video_area_keeps_16_9(qtbot, window_factory, fake_provider):
     w = window_factory()
     w.resize(1300, 800)
     w.library.save_info(fake_provider.fetch_info(VID))
     w.open_saved_video(1)
     QApplication.processEvents()
-    area = w.watch_page.player
-    assert abs(area.height() - min(area.width(), 1000) * 9 / 16) <= 2
+    player = w.watch_page.player
+    assert abs(player.stack.height() - player.width() * 9 / 16) <= 3  # a imagem é 16:9; os controles ficam abaixo
     w.resize(900, 700)
     QApplication.processEvents()
-    assert abs(area.height() - area.width() * 9 / 16) <= 2
+    assert abs(player.stack.height() - player.width() * 9 / 16) <= 3
 
 
 def test_player_never_pushes_actions_out_of_view(qtbot, window_factory, fake_provider):
@@ -358,5 +370,5 @@ def test_player_never_pushes_actions_out_of_view(qtbot, window_factory, fake_pro
     w.open_saved_video(1)
     QApplication.processEvents()
     page = w.watch_page
-    assert page.player.height() <= page.height() * 0.58 + 2
-    assert abs(page.player.height() - page.player.width() * 9 / 16) <= 2  # proporção preservada
+    assert page.player.height() <= page.height() * 0.62 + 2
+    assert abs(page.player.stack.height() - page.player.width() * 9 / 16) <= 3  # proporção preservada

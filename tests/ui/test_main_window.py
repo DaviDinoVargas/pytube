@@ -16,13 +16,14 @@ def make(qtbot, settings):
 
     from app.infrastructure.providers.chain import ProviderChain
     from app.services.thumbnail_service import ThumbnailService
-    from tests.fakes import FakeProvider
+    from tests.fakes import FakeProvider, make_stub_player
 
     storage = StorageManager(settings, Path(settings.location).parent / "appdata")
     if storage.status() != "ready":
         storage.configure(Path(settings.location).parent / "lib", "folder", "sqlite")
     window = create_window(
-        QApplication.instance(), settings, storage, ProviderChain([FakeProvider("fake")]), ThumbnailService(lambda u: b"")
+        QApplication.instance(), settings, storage, ProviderChain([FakeProvider("fake")]), ThumbnailService(lambda u: b""),
+        player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
     )
     qtbot.addWidget(window)
     window.show()

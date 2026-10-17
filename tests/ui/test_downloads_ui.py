@@ -8,7 +8,7 @@ from app.services import download_service as ds
 from app.services.storage_service import StorageManager
 from app.services.thumbnail_service import ThumbnailService
 from app.bootstrap import create_window
-from tests.fakes import VID, MediaProvider
+from tests.fakes import VID, MediaProvider, make_stub_player
 from tests.media import FFMPEG, FFPROBE, HAS_FFMPEG, make_media
 
 pytestmark = pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg não instalado")
@@ -39,6 +39,7 @@ def ctx(qtbot, settings, tmp_path, media):
         w = create_window(
             QApplication.instance(), settings, storage, ProviderChain([provider]),
             ThumbnailService(lambda u: b""), lambda: state["tools"](),
+            player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
         )
         qtbot.addWidget(w)
         w.show()

@@ -55,9 +55,12 @@ def window_factory(qtbot, settings, tmp_path, fake_provider, jpeg):
         storage = storage or StorageManager(settings, tmp_path / "appdata")
         if configure and storage.status() != "ready":
             storage.configure(tmp_path / "lib", "folder", "sqlite")
+        from tests.fakes import make_stub_player
+
         w = create_window(
             QApplication.instance(), settings, storage,
             ProviderChain([fake_provider]), ThumbnailService(lambda url: jpeg),
+            player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
         )
         qtbot.addWidget(w)
         w.show()

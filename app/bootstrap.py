@@ -24,14 +24,14 @@ def default_providers(settings):
     return ProviderChain([PytubefixProvider(), YtdlpProvider()], order=settings.provider_order)
 
 
-def create_window(app, settings=None, storage=None, providers=None, thumbnails=None, tools_getter=None):
+def create_window(app, settings=None, storage=None, providers=None, thumbnails=None, tools_getter=None, player_options=None):
     settings = settings or SettingsService()
     storage = storage or StorageManager(settings, default_app_data_dir())
     providers = providers or default_providers(settings)
     translator = Translator(settings.language)
     theme = ThemeManager(app, settings.theme)
     theme.apply()
-    return MainWindow(settings, translator, theme, storage, providers, thumbnails, tools_getter)
+    return MainWindow(settings, translator, theme, storage, providers, thumbnails, tools_getter, player_options)
 
 
 def run():
