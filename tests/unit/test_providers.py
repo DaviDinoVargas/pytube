@@ -316,3 +316,70 @@ def test_providers_report_not_installed(monkeypatch):
     with pytest.raises(ProviderError) as exc:
         pf.PytubefixProvider().fetch_info(VID)
     assert exc.value.code == "not_installed"
+
+
+# ---------- URL direta (player próprio) ----------
+def test_chain_stream_url_uses_provider_of_the_info_then_falls_back():
+    a = FakeProvider("a", streams=default_streams())
+    b = FakeProvider("b", streams=default_streams())
+    a.url_error = "failed"
+    chain = ProviderChain([a, b], order=("a", "b"))
+    info = chain.fetch_info(VID)
+    stream = [s for s in info.streams if s.kind == "progressive" and s.height == 720][0]
+    assert "googlevideo.com" in chain.stream_url(info, stream) and "itag=22" in chain.stream_url(info, stream)
+    b.url_error = "failed"
+    with pytest.raises(ProviderError):
+        chain.stream_url(info, stream)
+
+
+def test_chain_stream_url_stops_on_terminal_error():
+    a, b = FakeProvider("a"), FakeProvider("b")
+    a.url_error = "drm"
+    chain = ProviderChain([a, b], order=("a", "b"))
+    with pytest.raises(ProviderError) as exc:
+        chain.stream_url(chain.fetch_info(VID), default_streams()[1])
+    assert exc.value.code == "drm"
+
+
+def test_base_provider_without_url_support_reports_unsupported():
+    from app.infrastructure.providers.base import VideoProvider
+
+    class Bare(VideoProvider):
+        name = "bare"
+        def is_available(self): return True
+        def fetch_info(self, video_id): ...
+        def download_stream(self, *a): ...
+
+    with pytest.raises(ProviderError) as exc:
+        Bare().stream_url(VID, default_streams()[0])
+    assert exc.value.code == "unsupported"
+
+
+def test_pytubefix_and_ytdlp_stream_url(monkeypatch):
+    class Target:
+        url = "https://rr1.googlevideo.com/x"
+
+    class FakeYT:
+        def __init__(self, url, on_progress_callback=None):
+            self.streams = types.SimpleNamespace(get_by_itag=lambda itag: Target() if itag == 22 else None)
+
+    monkeypatch.setitem(sys.modules, "pytubefix", types.SimpleNamespace(YouTube=FakeYT))
+    p = pf.PytubefixProvider()
+    assert p.stream_url(VID, StreamOption("progressive", "22")) == "https://rr1.googlevideo.com/x"
+    with pytest.raises(ProviderError) as exc:
+        p.stream_url(VID, StreamOption("progressive", "99"))
+    assert exc.value.code == "unsupported"
+
+    class FakeYDL:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, url, download=False):
+            return {"formats": [{"format_id": "18", "url": "https://rr2.googlevideo.com/y"}, {"format_id": "22"}]}
+
+    monkeypatch.setitem(sys.modules, "yt_dlp", types.SimpleNamespace(YoutubeDL=FakeYDL))
+    y = yd.YtdlpProvider()
+    assert y.stream_url(VID, StreamOption("progressive", "18")) == "https://rr2.googlevideo.com/y"
+    for missing in ("22", "999"):  # sem 'url' ou inexistente
+        with pytest.raises(ProviderError):
+            y.stream_url(VID, StreamOption("progressive", missing))

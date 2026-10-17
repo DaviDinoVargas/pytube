@@ -80,3 +80,7 @@ class VideoProvider(ABC):
     @abstractmethod
     def download_stream(self, video_id, stream, dest, on_progress, cancel_event):
         """Baixa `stream` para o caminho exato `dest`. `on_progress(feito, total)`; `cancel_event` é um threading.Event."""
+
+    def stream_url(self, video_id, stream):
+        """URL direta do stream, para o 'player próprio'. Provedores sem suporte não precisam implementar."""
+        raise ProviderError("unsupported", f"{self.name}: sem URL direta")

@@ -74,6 +74,32 @@ class ProviderChain:
                     raise
         raise self._most_specific(errors) if errors else ProviderError("not_installed")
 
+    def stream_url(self, info, stream):
+        """URL direta de `stream`: pelo provedor que gerou `info`, senão pelo stream equivalente nos outros."""
+        errors = []
+        first = self._providers.get(info.provider)
+        if first is not None:
+            try:
+                return first.stream_url(info.source_id, stream)
+            except ProviderError as exc:
+                errors.append(exc)
+                if exc.code in TERMINAL_CODES:
+                    raise
+        for provider in self.available():
+            if provider.name == info.provider:
+                continue
+            try:
+                other = provider.fetch_info(info.source_id)
+                match = quality.equivalent(stream, other.streams)
+                if match is None:
+                    continue
+                return provider.stream_url(info.source_id, match)
+            except ProviderError as exc:
+                errors.append(exc)
+                if exc.code in TERMINAL_CODES:
+                    raise
+        raise self._most_specific(errors) if errors else ProviderError("unsupported", "sem URL direta")
+
     @staticmethod
     def _most_specific(errors):
         """Prefere um erro com causa conhecida a um genérico ('failed' / 'network')."""

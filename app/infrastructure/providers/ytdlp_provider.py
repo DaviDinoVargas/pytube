@@ -132,3 +132,18 @@ class YtdlpProvider(VideoProvider):
             if cancel_event.is_set():
                 raise DownloadCancelled() from exc
             raise map_error(exc) from exc
+
+    def stream_url(self, video_id, stream):
+        if not self.is_available():
+            raise ProviderError("not_installed", self.name)
+        import yt_dlp
+
+        try:
+            with yt_dlp.YoutubeDL({**self._base_options(), "skip_download": True}) as ydl:
+                data = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+        except Exception as exc:
+            raise map_error(exc) from exc
+        for fmt in data.get("formats", []):
+            if str(fmt.get("format_id")) == stream.format_id and fmt.get("url"):
+                return fmt["url"]
+        raise ProviderError("unsupported", f"formato {stream.format_id}")

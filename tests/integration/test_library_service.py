@@ -198,3 +198,26 @@ def test_thumbnail_rejects_garbage_and_disallowed_hosts(env):
 
 def test_thumbnail_name_is_filesystem_safe():
     assert thumbnail_name("youtube", "../../x y") == "youtube_______x_y.jpg"
+
+
+def test_stream_url_picks_best_progressive_and_validates_host(env):
+    service, storage, provider, _ = env
+    url, height = service.stream_url(VID)
+    assert height == 720 and "itag=22" in url
+    provider.url_template = "https://evil.example/{id}?{itag}"
+    with pytest.raises(ProviderError) as exc:
+        service.stream_url(VID)
+    assert exc.value.code == "unsupported"
+    provider.url_template = "http://rr1.googlevideo.com/{id}?{itag}"  # sem https
+    with pytest.raises(ProviderError):
+        service.stream_url(VID)
+
+
+def test_stream_url_without_progressive_stream_is_unsupported(env):
+    from app.infrastructure.providers.base import StreamOption
+
+    service, storage, provider, _ = env
+    provider._streams = [StreamOption("video", "137", "mp4", 1080), StreamOption("audio", "140", "m4a")]
+    with pytest.raises(ProviderError) as exc:
+        service.stream_url(VID)
+    assert exc.value.code == "unsupported"

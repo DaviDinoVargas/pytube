@@ -121,3 +121,16 @@ class PytubefixProvider(VideoProvider):
             raise
         except Exception as exc:
             raise map_error(exc) from exc
+
+    def stream_url(self, video_id, stream):
+        if not self.is_available():
+            raise ProviderError("not_installed", self.name)
+        try:
+            target = self._youtube(video_id).streams.get_by_itag(int(stream.format_id))
+            if target is None:
+                raise ProviderError("unsupported", f"itag {stream.format_id}")
+            return target.url
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise map_error(exc) from exc

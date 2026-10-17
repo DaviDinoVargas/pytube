@@ -6,11 +6,14 @@ from PySide6.QtCore import QObject, Signal
 from app.domain.errors import DuplicateError, StorageError
 from app.domain.models import LOCAL_MISSING, LOCAL_NONE, LOCAL_OK, Video, now_iso
 from app.domain.urls import extract_video_id
+from urllib.parse import urlparse
+
 from app.infrastructure.providers.base import ProviderError
 from app.services.storage_service import STATUS_READY
 from app.services.thumbnail_service import ThumbnailService, thumbnail_name
 
 SORT_NEWEST = "newest"
+_STREAM_HOSTS = ("googlevideo.com", "youtube.com", "ytimg.com")
 
 
 class LibraryService(QObject):
@@ -57,6 +60,20 @@ class LibraryService(QObject):
     def fetch_info(self, video_id):
         """Consulta os provedores (rede). Rode fora da thread da interface."""
         return self._providers.fetch_info(video_id)
+
+    def stream_url(self, source_id):
+        """URL de um stream com som (o de maior altura) para o 'player próprio'. Devolve (url, altura)."""
+        info = self.fetch_info(source_id)
+        direct = [s for s in info.streams if s.kind == "progressive" and s.height]
+        if not direct:
+            raise ProviderError("unsupported", "nenhum stream com áudio e vídeo juntos")
+        stream = max(direct, key=lambda s: s.height)
+        url = self._providers.stream_url(info, stream)
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not any(host == h or host.endswith("." + h) for h in _STREAM_HOSTS):
+            raise ProviderError("unsupported", "URL de stream fora dos hosts esperados")
+        return url, stream.height
 
     def save_info(self, info):
         """Guarda a referência do vídeo (não baixa o arquivo). Devolve (video, created)."""
