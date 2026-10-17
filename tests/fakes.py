@@ -73,3 +73,54 @@ class FakeProvider(VideoProvider):
                 fh.write(chunk)
                 written += len(chunk)
                 on_progress(written, total)
+
+
+class MediaProvider(FakeProvider):
+    """Entrega arquivos de mídia reais (gerados pelo ffmpeg) para os testes de download.
+
+    `files` mapeia format_id -> caminho. `delay` espera entre os blocos (para testar cancelamento e
+    concorrência). `fail_times` faz as primeiras N tentativas de download falharem.
+    """
+
+    def __init__(self, files, streams, name="media", duration=2, delay=0.0, fail_times=0, fail_code="failed", **kw):
+        super().__init__(name, streams=streams, **kw)
+        self.files = files
+        self.duration = duration
+        self.delay = delay
+        self.fail_times = fail_times
+        self.fail_code = fail_code
+        self.running = 0
+        self.max_running = 0
+        self._guard = threading.Lock()
+
+    def fetch_info(self, video_id):
+        info = super().fetch_info(video_id)
+        info.duration = self.duration
+        return info
+
+    def download_stream(self, video_id, stream, dest, on_progress, cancel_event):
+        import time
+
+        with self._guard:
+            self.running += 1
+            self.max_running = max(self.max_running, self.running)
+            self.downloads.append((video_id, stream.format_id))
+        try:
+            if self.fail_times > 0:
+                self.fail_times -= 1
+                raise ProviderError(self.fail_code, "simulado")
+            data = self.files[stream.format_id].read_bytes()
+            total, step, written = len(data), max(1, len(data) // 5), 0
+            with open(dest, "wb") as fh:
+                while written < total:
+                    if cancel_event.is_set():
+                        raise DownloadCancelled()
+                    chunk = data[written:written + step]
+                    fh.write(chunk)
+                    written += len(chunk)
+                    on_progress(written, total)
+                    if self.delay:
+                        time.sleep(self.delay)
+        finally:
+            with self._guard:
+                self.running -= 1
