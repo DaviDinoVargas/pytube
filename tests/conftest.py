@@ -11,3 +11,8 @@ from app.services.settings_service import SettingsService
 @pytest.fixture
 def settings(tmp_path):
     return SettingsService(QSettings(str(tmp_path / "prefs.ini"), QSettings.IniFormat))
+
+
+@pytest.fixture(scope="session")
+def qapp_args():
+    return []
