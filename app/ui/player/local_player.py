@@ -1,4 +1,4 @@
-from PySide6.QtCore import QEvent, Qt, QUrl
+from PySide6.QtCore import QEvent, Qt, QUrl, Slot
 from PySide6.QtMultimedia import QAudioOutput, QMediaMetaData, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import QVBoxLayout
@@ -25,17 +25,36 @@ class LocalPlayer(PlayerBackend):
         self._start = 0.0
         self._autoplay = True
         self._height = 0
-        self._player.playbackStateChanged.connect(
-            lambda state: self.state_changed.emit(state == QMediaPlayer.PlayingState)
-        )
-        self._player.positionChanged.connect(lambda ms: self.position_changed.emit(ms / 1000, self._player.duration() / 1000))
-        self._player.durationChanged.connect(lambda ms: self.position_changed.emit(self._player.position() / 1000, ms / 1000))
-        self._player.metaDataChanged.connect(self._on_metadata)
-        self._player.mediaStatusChanged.connect(self._on_status)
-        self._player.errorOccurred.connect(lambda _e, text: self.error.emit("local_failed", text))
-        self._audio.volumeChanged.connect(lambda _v: self._emit_status())
-        self._audio.mutedChanged.connect(lambda _m: self._emit_status())
-        self._player.playbackRateChanged.connect(lambda _r: self._emit_status())
+        # Ligações a métodos @Slot, sempre em fila (QueuedConnection):
+        #  - lambdas rodariam na thread de decodificação e podem travar ao disputar o GIL;
+        #  - QMediaPlayer.stop() emite os sinais de forma síncrona, ainda no meio da parada. Mexer em menus e widgets ali
+        #    dentro trava o aplicativo. Em fila, o nosso código só roda depois que a chamada retorna.
+        queued = Qt.QueuedConnection
+        self._player.playbackStateChanged.connect(self._on_state, queued)
+        self._player.positionChanged.connect(self._on_position, queued)
+        self._player.durationChanged.connect(self._on_duration, queued)
+        self._player.metaDataChanged.connect(self._on_metadata, queued)
+        self._player.mediaStatusChanged.connect(self._on_status, queued)
+        self._player.errorOccurred.connect(self._on_error, queued)
+        self._audio.volumeChanged.connect(self._emit_status, queued)
+        self._audio.mutedChanged.connect(self._emit_status, queued)
+        self._player.playbackRateChanged.connect(self._emit_status, queued)
+
+    @Slot(QMediaPlayer.PlaybackState)
+    def _on_state(self, state):
+        self.state_changed.emit(state == QMediaPlayer.PlayingState)
+
+    @Slot("qlonglong")
+    def _on_position(self, ms):
+        self.position_changed.emit(ms / 1000, self._player.duration() / 1000)
+
+    @Slot("qlonglong")
+    def _on_duration(self, ms):
+        self.position_changed.emit(self._player.position() / 1000, ms / 1000)
+
+    @Slot(QMediaPlayer.Error, str)
+    def _on_error(self, _error, text):
+        self.error.emit("local_failed", text)
 
     # -- carga ---------------------------------------------------------------------
     def load_file(self, path, start=0.0, autoplay=True):
@@ -48,6 +67,7 @@ class LocalPlayer(PlayerBackend):
         self._start, self._autoplay, self._height = max(0.0, start), autoplay, 0
         self._player.setSource(url)
 
+    @Slot(QMediaPlayer.MediaStatus)
     def _on_status(self, status):
         if status == QMediaPlayer.LoadedMedia:
             if self._start > 0:
@@ -62,6 +82,7 @@ class LocalPlayer(PlayerBackend):
         elif status == QMediaPlayer.InvalidMedia:
             self.error.emit("local_failed", "mídia inválida ou formato sem suporte")
 
+    @Slot()
     def _on_metadata(self):
         size = self._player.metaData().value(QMediaMetaData.Resolution)
         height = int(size.height()) if size is not None and hasattr(size, "height") else 0
@@ -69,7 +90,10 @@ class LocalPlayer(PlayerBackend):
             self._height = height
             self.quality_changed.emit(height, [height])
 
-    def _emit_status(self):
+    @Slot()
+    @Slot(float)
+    @Slot(bool)
+    def _emit_status(self, *_args):
         self.status_changed.emit(int(round(self._audio.volume() * 100)), self._audio.isMuted(), self._player.playbackRate())
 
     # -- comandos -------------------------------------------------------------------
