@@ -1,5 +1,5 @@
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QProgressBar, QToolButton, QVBoxLayout
 
 from app.domain import states
 from app.domain.states import format_duration
@@ -16,9 +16,11 @@ class VideoRow(ActionsMixin, QFrame):
     action_requested = Signal(int, str)
     selection_changed = Signal(int, bool)
 
-    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False, organize=None, categories=()):
+    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False, organize=None, categories=(),
+                 watch="none", fraction=0.0, can_forget=False):
         super().__init__()
         self.video, self.state = video, state
+        self.watch, self._can_forget = watch, can_forget
         self._tr, self._can_download, self._organize = translator, can_download, organize
         self._selectable = False
         t = translator.t
@@ -55,6 +57,15 @@ class VideoRow(ActionsMixin, QFrame):
         self.meta_label.setObjectName("cardMeta")
         column.addWidget(self.title_label)
         column.addWidget(self.meta_label)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setObjectName("cardProgress")
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 1000)
+        self.progress_bar.setValue(int(fraction * 1000))
+        self.progress_bar.setProperty("watched", watch == "watched")
+        self.progress_bar.setFixedHeight(4)
+        self.progress_bar.setVisible(fraction > 0)
+        column.addWidget(self.progress_bar)
         self.chips = []
         if categories:
             chip_row = QHBoxLayout()

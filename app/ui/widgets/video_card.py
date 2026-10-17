@@ -2,7 +2,7 @@ from datetime import datetime
 
 from PySide6.QtCore import QLocale, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QProgressBar, QToolButton, QVBoxLayout, QWidget
 
 from app.domain import states
 from app.domain.states import format_duration
@@ -89,7 +89,20 @@ class ActionsMixin:
         entries.append(("browser", t("card.menu_browser")))
         if self.state == states.DOWNLOADED:
             entries.append(("folder", t("card.menu_folder")))
+        base_entries = list(entries)
         for key, label in entries:
+            action = menu.addAction(label)
+            action.triggered.connect(lambda _=False, k=key: self._emit_action(k))
+        watch = getattr(self, "watch", "none")
+        if watch == "watched":
+            entries.append(("unwatch", t("card.menu_unwatched")))
+        else:
+            entries.append(("watch", t("card.menu_watched")))
+        if watch != "none":
+            entries.append(("restart", t("card.menu_restart")))
+        if getattr(self, "_can_forget", False):
+            entries.append(("forget", t("card.menu_forget")))
+        for key, label in entries[len(base_entries):]:
             action = menu.addAction(label)
             action.triggered.connect(lambda _=False, k=key: self._emit_action(k))
         if self._organize is not None:
@@ -114,10 +127,12 @@ class VideoCard(ActionsMixin, QFrame):
     action_requested = Signal(int, str)
     selection_changed = Signal(int, bool)
 
-    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False, organize=None):
+    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False, organize=None, watch="none", fraction=0.0, can_forget=False):
         super().__init__()
         self.video = video
         self.state = state
+        self.watch = watch
+        self._can_forget = can_forget
         self._tr = translator
         self._can_download = can_download
         self._organize = organize
@@ -163,6 +178,19 @@ class VideoCard(ActionsMixin, QFrame):
             badge.move(8, 8)
             badge.show()
             self.state_badge = badge
+
+        self.progress_bar = QProgressBar(thumb)
+        self.progress_bar.setObjectName("cardProgress")
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setRange(0, 1000)
+        self.progress_bar.setValue(int(fraction * 1000))
+        self.progress_bar.setProperty("watched", watch == "watched")
+        self.progress_bar.setGeometry(0, THUMB_H - 4, THUMB_W, 4)
+        self.progress_bar.setVisible(fraction > 0)
+        if watch == "watched":
+            self.setAccessibleName(f"{self.accessibleName()}. {translator.t('card.watched')}")
+        elif fraction > 0:
+            self.setAccessibleName(f"{self.accessibleName()}. {translator.t('card.progress', percent=int(fraction * 100))}")
 
         self.check = QCheckBox(thumb)
         self.check.setObjectName("cardCheck")

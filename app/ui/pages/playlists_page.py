@@ -2,6 +2,9 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QTransform
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton, QVBoxLayout, QWidget
 
+from app.ui.widgets.flow_layout import FlowLayout
+
+from app.domain.history import SMART_ORDER, SMART_PLAYLISTS
 from app.domain.states import format_duration
 from app.styles.icons import icon
 from app.ui.pages.base import EmptyState, Page
@@ -16,6 +19,50 @@ class PlaylistsPage(CollectionPage):
     new_key = "playlists.new"
     playlist_opened = Signal(int)
     play_requested = Signal(int)
+    smart_opened = Signal(str)  # chave da playlist inteligente
+    smart_play_requested = Signal(str)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Playlists inteligentes: consultas sempre atuais, acima das manuais
+        self.smart_title = QLabel()
+        self.smart_title.setObjectName("sectionTitle")
+        self.smart_box = QWidget()
+        self.smart_flow = FlowLayout(self.smart_box, 14, 14)
+        self.mine_title = QLabel()
+        self.mine_title.setObjectName("sectionTitle")
+        self.body.insertWidget(1, self.smart_title)
+        self.body.insertWidget(2, self.smart_box)
+        self.body.insertWidget(3, self.mine_title)
+        self.smart_cards = []
+        self.retranslate()
+
+    def refresh(self):
+        for card in self.smart_cards:
+            self.smart_flow.removeWidget(card)
+            card.setParent(None)
+            card.deleteLater()
+        self.smart_cards = []
+        t = self._tr.t
+        for key in SMART_ORDER:
+            count = len(self._org.query(SMART_PLAYLISTS[key]))
+            card = CollectionCard(
+                self._tr, self._tokens, 0, t(f"smart.{key}"), t(f"smart.{key}_desc"), count_text(self._tr, count),
+                play=count > 0, menu=False,
+            )
+            card.opened.connect(lambda _id, k=key: self.smart_opened.emit(k))
+            card.play_requested.connect(lambda _id, k=key: self.smart_play_requested.emit(k))
+            self.smart_flow.addWidget(card)
+            self.smart_cards.append(card)
+            card.smart_key = key
+        self.smart_flow.invalidate()
+        super().refresh()
+
+    def retranslate(self):
+        super().retranslate()
+        if hasattr(self, "smart_title"):
+            self.smart_title.setText(self._tr.t("smart.title"))
+            self.mine_title.setText(self._tr.t("smart.mine"))
 
     def items(self):
         return self._org.playlists()

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QHBoxLayout, QM
 from app import APP_NAME
 from app.infrastructure.media.ffmpeg import MediaError, bundled_root, locate
 from app.services.download_service import DownloadManager
+from app.domain.history import SMART_PLAYLISTS
 from app.services.library_service import LibraryService
 from app.services.organization_service import OrganizationService
 from app.services.progress_service import ProgressService
@@ -15,7 +16,7 @@ from app.ui.query_state import QueryState
 from app.styles.icons import icon
 from app.ui.pages.downloads_page import DownloadsPage
 from app.ui.pages.categories_page import CategoriesPage
-from app.ui.pages.placeholder_pages import ContinuePage, HistoryPage
+from app.ui.pages.history_pages import ContinuePage, HistoryPage
 from app.ui.pages.playlists_page import PlaylistDetailPage, PlaylistsPage
 from app.ui.pages.library_page import LibraryPage
 from app.ui.pages.video_pages import DownloadedPage, HomePage
@@ -71,16 +72,20 @@ class MainWindow(QMainWindow):
         self.pages = {}
         library = self.library
         video_args = dict(
-            can_download=lambda: library.ready, download_status=self.downloads.status_for_video, organize=self.organize
+            can_download=lambda: library.ready, download_status=self.downloads.status_for_video, organize=self.organize,
+            progress=self.progress,
         )
         for page in (
             HomePage(translator, library, tokens, org=self.org, **video_args),
-            ContinuePage(translator),
+            ContinuePage(translator, library, tokens, self.org, **video_args),
             LibraryPage(translator, library, tokens, self.org, self.query_state, settings, **video_args),
             DownloadedPage(translator, library, tokens, **video_args),
             PlaylistsPage(translator, self.org, library, tokens, self._prompt_playlist),
             CategoriesPage(translator, self.org, library, tokens, self._prompt_category),
-            HistoryPage(translator),
+            HistoryPage(
+                translator, library, tokens, self.org, self.progress,
+                can_download=video_args["can_download"], download_status=video_args["download_status"], organize=self.organize,
+            ),
             DownloadsPage(translator, self.downloads, library, tokens),
         ):
             self._add_page(page)
@@ -106,11 +111,14 @@ class MainWindow(QMainWindow):
             if hasattr(page, "video_action"):
                 page.video_action.connect(self._on_video_action)
         self.pages["home"].category_all_requested.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
+        self.pages["history"].message.connect(self.top_bar.show_message)
         self.pages["categories"].message.connect(self.top_bar.show_message)
         self.pages["categories"].category_opened.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
         self.pages["playlists"].message.connect(self.top_bar.show_message)
         self.pages["playlists"].playlist_opened.connect(self.open_playlist)
         self.pages["playlists"].play_requested.connect(lambda pid: self.play_playlist(pid))
+        self.pages["playlists"].smart_opened.connect(self.open_smart_playlist)
+        self.pages["playlists"].smart_play_requested.connect(self.play_smart_playlist)
         self.playlist_page.back_requested.connect(lambda: self.show_page("playlists"))
         self.playlist_page.play_requested.connect(self.play_playlist)
         self.pages["downloads"].message.connect(self.top_bar.show_message)
@@ -221,6 +229,16 @@ class MainWindow(QMainWindow):
         if not ids:
             return
         self.open_saved_video(start_video_id if start_video_id in ids else ids[0], playlist_id)
+
+    def open_smart_playlist(self, key):
+        """Playlist inteligente = a biblioteca com a consulta correspondente já aplicada."""
+        self.query_state.open(SMART_PLAYLISTS[key])
+        self.show_page("library")
+
+    def play_smart_playlist(self, key):
+        videos = self.org.query(SMART_PLAYLISTS[key])
+        if videos:
+            self.open_saved_video(videos[0].id)
 
     def _refresh_playlist_context(self, video_id):
         playlist = self.org.get_playlist(self._playlist_id) if self._playlist_id is not None else None
@@ -356,7 +374,15 @@ class MainWindow(QMainWindow):
         video = self.library.get(video_id)
         if video is None:
             return
-        if action == "download":
+        if action == "watch":
+            self.progress.mark_watched(video_id, True)
+        elif action == "unwatch":
+            self.progress.mark_watched(video_id, False)
+        elif action == "restart":
+            self.progress.restart(video_id)
+        elif action == "forget":
+            self.progress.forget(video_id)
+        elif action == "download":
             self.open_saved_video(video_id)
         elif action == "browser":
             url = watch_url(video.source_id)

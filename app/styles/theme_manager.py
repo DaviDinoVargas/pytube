@@ -178,6 +178,10 @@ QFrame#collectionCard:hover {{ border-color: {t['text_secondary']}; }}
 QFrame#collectionCard:focus {{ border-color: {t['text_primary']}; }}
 QFrame#collectionCard QLabel, QFrame#collectionCard QWidget {{ background: transparent; }}
 
+QProgressBar#cardProgress {{ background: rgba(0, 0, 0, 120); border: none; border-radius: 0; max-height: 4px; }}
+QProgressBar#cardProgress::chunk {{ background: {t['progress']}; border-radius: 0; }}
+QProgressBar#cardProgress[watched="true"]::chunk {{ background: {t['success']}; }}
+
 QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
 QLabel#watchTitle {{ font-size: 21px; font-weight: 700; }}
 QToolButton#textButton {{

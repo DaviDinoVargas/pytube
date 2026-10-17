@@ -18,7 +18,7 @@ class CollectionCard(QFrame):
     delete_requested = Signal(int)
     play_requested = Signal(int)
 
-    def __init__(self, translator, tokens, item_id, name, description, count_text, color=None, edit_key="", delete_key="", play=False):
+    def __init__(self, translator, tokens, item_id, name, description, count_text, color=None, edit_key="", delete_key="", play=False, menu=True):
         super().__init__()
         self.item_id, self.name = item_id, name
         self.setObjectName("collectionCard")
@@ -47,10 +47,12 @@ class CollectionCard(QFrame):
         self.menu_button.setToolTip(t("card.more"))
         self.menu_button.setAccessibleName(t("card.more"))
         self.menu_button.setPopupMode(QToolButton.InstantPopup)
-        menu = QMenu(self.menu_button)
-        menu.addAction(t(edit_key)).triggered.connect(lambda _=False: self.edit_requested.emit(self.item_id))
-        menu.addAction(t(delete_key)).triggered.connect(lambda _=False: self.delete_requested.emit(self.item_id))
-        self.menu_button.setMenu(menu)
+        if menu:
+            actions = QMenu(self.menu_button)
+            actions.addAction(t(edit_key)).triggered.connect(lambda _=False: self.edit_requested.emit(self.item_id))
+            actions.addAction(t(delete_key)).triggered.connect(lambda _=False: self.delete_requested.emit(self.item_id))
+            self.menu_button.setMenu(actions)
+        self.menu_button.setVisible(menu)
         head.addWidget(self.dot)
         head.addWidget(self.name_label, 1)
         head.addWidget(self.menu_button)

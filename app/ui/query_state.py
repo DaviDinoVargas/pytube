@@ -46,3 +46,7 @@ class QueryState(QObject):
         """Zera os filtros e aplica `changes` (ex.: abrir a biblioteca já filtrada por uma categoria)."""
         base = replace(self._query.cleared(), text="")
         self.set_query(replace(base, **changes))
+
+    def open(self, query):
+        """Abre uma consulta pronta (ex.: playlist inteligente), sem restos de busca ou filtros anteriores."""
+        self.set_query(replace(query, text=""))

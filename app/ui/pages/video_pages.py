@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.domain import states
+from app.domain.history import SMART_PLAYLISTS, progress_fraction, watch_status
 from app.domain.query import LibraryQuery
 from app.domain.states import video_state
 from app.ui.pages.base import EmptyState, Page
@@ -19,9 +20,11 @@ class VideoPage(Page):
     video_opened = Signal(int)
     video_action = Signal(int, str)
 
-    def __init__(self, translator, library, tokens, can_download=lambda: False, download_status=lambda video_id: None, organize=None):
+    def __init__(self, translator, library, tokens, can_download=lambda: False, download_status=lambda video_id: None, organize=None, progress=None):
         super().__init__(translator)
         self._library = library
+        self._progress = progress
+        self._can_forget = False
         self._organize = organize
         self._download_status = download_status
         self._tokens = tokens
@@ -35,8 +38,14 @@ class VideoPage(Page):
     def videos(self):
         raise NotImplementedError
 
+    def watch_info(self, video):
+        """(status de assistido, fração 0..1) do vídeo, a partir do progresso salvo."""
+        progress = self._progress.get(video.id) if self._progress is not None else None
+        return watch_status(progress), progress_fraction(video, progress)
+
     def make_card(self, video):
         video = self._library.validate_local(video)
+        watch, fraction = self.watch_info(video)
         card = VideoCard(
             self._tr,
             self._tokens,
@@ -45,6 +54,9 @@ class VideoPage(Page):
             self._library.thumbnail_path(video),
             can_download=self._can_download(),
             organize=self._organize,
+            watch=watch,
+            fraction=fraction,
+            can_forget=self._can_forget,
         )
         card.open_requested.connect(self.video_opened)
         card.action_requested.connect(self.video_action)

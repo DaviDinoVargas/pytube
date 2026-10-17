@@ -64,7 +64,7 @@ def test_card_without_duration_has_no_duration_badge(qtbot, tr):
 
 
 def test_menu_actions_depend_on_state(qtbot, tr):
-    assert card(qtbot, tr, video(), states.SAVED).action_keys() == ["Abrir", "Abrir no navegador", "Remover da biblioteca"]
+    assert card(qtbot, tr, video(), states.SAVED).action_keys() == ["Abrir", "Abrir no navegador", "Marcar como assistido", "Remover da biblioteca"]
     assert "Mostrar arquivo na pasta" in card(qtbot, tr, video(), states.DOWNLOADED).action_keys()
     assert "Baixar vídeo" not in card(qtbot, tr, video(), states.SAVED).action_keys()  # só existe com downloads ativos
     assert "Baixar vídeo" in card(qtbot, tr, video(), states.SAVED, can_download=True).action_keys()

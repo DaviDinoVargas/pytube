@@ -190,9 +190,11 @@ class LibraryPage(VideoPage):
     def _make_row(self, video):
         video = self._library.validate_local(video)
         by_video = self._categories_by_video()
+        watch, fraction = self.watch_info(video)
         row = VideoRow(
             self._tr, self._tokens, video, video_state(video, self._download_status(video.id)), self._library.thumbnail_path(video),
             can_download=self._can_download(), organize=self._organize, categories=by_video.get(video.id, ()),
+            watch=watch, fraction=fraction,
         )
         row.open_requested.connect(self.video_opened)
         row.action_requested.connect(self.video_action)
