@@ -1,0 +1,143 @@
+from PySide6.QtCore import QObject, Signal
+
+LANGUAGES = {"pt-BR": "Português (Brasil)", "en": "English"}
+DEFAULT_LANGUAGE = "pt-BR"
+
+_STRINGS = {
+    "pt-BR": {
+        "nav.home": "Início",
+        "nav.continue": "Continuar assistindo",
+        "nav.library": "Biblioteca",
+        "nav.downloaded": "Baixados",
+        "nav.playlists": "Playlists",
+        "nav.categories": "Categorias",
+        "nav.history": "Histórico",
+        "nav.downloads": "Downloads",
+        "nav.settings": "Configurações",
+        "nav.collapse": "Recolher menu",
+        "nav.expand": "Expandir menu",
+        "topbar.url_placeholder": "Cole o link de um vídeo do YouTube",
+        "topbar.open": "Abrir vídeo",
+        "topbar.search_placeholder": "Pesquisar na biblioteca",
+        "topbar.invalid_url": "Não foi possível reconhecer o endereço. Verifique o link e tente novamente.",
+        "topbar.url_ok": "Link reconhecido. A reprodução será ativada nas próximas etapas.",
+        "home.title": "Início",
+        "home.subtitle": "Tudo o que você guardou, organizado por categorias.",
+        "home.empty_title": "Sua biblioteca está vazia",
+        "home.empty_body": "Cole um link acima para adicionar seu primeiro vídeo.",
+        "continue.title": "Continuar assistindo",
+        "continue.subtitle": "Retome de onde parou.",
+        "continue.empty_title": "Nada em andamento",
+        "continue.empty_body": "Os vídeos que você começar a assistir aparecem aqui.",
+        "library.title": "Biblioteca",
+        "library.subtitle": "Todos os vídeos salvos e baixados.",
+        "library.empty_title": "Nenhum vídeo salvo",
+        "library.empty_body": "Salve vídeos para assistir depois, com ou sem baixar.",
+        "downloaded.title": "Baixados",
+        "downloaded.subtitle": "Vídeos com arquivo local verificado.",
+        "downloaded.empty_title": "Nenhum vídeo baixado",
+        "downloaded.empty_body": "Vídeos baixados são reproduzidos direto do seu computador.",
+        "playlists.title": "Playlists",
+        "playlists.subtitle": "Coleções ordenadas de vídeos.",
+        "playlists.empty_title": "Nenhuma playlist",
+        "playlists.empty_body": "Crie uma playlist para organizar a ordem em que quer assistir.",
+        "categories.title": "Categorias",
+        "categories.subtitle": "Seus próprios grupos de assunto.",
+        "categories.empty_title": "Nenhuma categoria",
+        "categories.empty_body": "Crie categorias como Estudos ou Música para separar a biblioteca.",
+        "history.title": "Histórico",
+        "history.subtitle": "O que você assistiu recentemente.",
+        "history.empty_title": "Histórico vazio",
+        "history.empty_body": "Os vídeos que você assistir aparecem aqui.",
+        "downloads.title": "Downloads",
+        "downloads.subtitle": "Fila e andamento dos downloads.",
+        "downloads.empty_title": "Nenhum download",
+        "downloads.empty_body": "Os downloads em andamento e concluídos aparecem aqui.",
+        "settings.title": "Configurações",
+        "settings.subtitle": "Aparência e idioma do aplicativo.",
+        "settings.group_general": "Geral",
+        "settings.language": "Idioma",
+        "settings.theme": "Tema",
+        "theme.dark": "Escuro",
+        "theme.light": "Claro",
+        "theme.system": "Sistema",
+    },
+    "en": {
+        "nav.home": "Home",
+        "nav.continue": "Continue watching",
+        "nav.library": "Library",
+        "nav.downloaded": "Downloaded",
+        "nav.playlists": "Playlists",
+        "nav.categories": "Categories",
+        "nav.history": "History",
+        "nav.downloads": "Downloads",
+        "nav.settings": "Settings",
+        "nav.collapse": "Collapse menu",
+        "nav.expand": "Expand menu",
+        "topbar.url_placeholder": "Paste a YouTube video link",
+        "topbar.open": "Open video",
+        "topbar.search_placeholder": "Search the library",
+        "topbar.invalid_url": "That address was not recognized. Check the link and try again.",
+        "topbar.url_ok": "Link recognized. Playback will be enabled in the next steps.",
+        "home.title": "Home",
+        "home.subtitle": "Everything you kept, organized by category.",
+        "home.empty_title": "Your library is empty",
+        "home.empty_body": "Paste a link above to add your first video.",
+        "continue.title": "Continue watching",
+        "continue.subtitle": "Pick up where you left off.",
+        "continue.empty_title": "Nothing in progress",
+        "continue.empty_body": "Videos you start watching show up here.",
+        "library.title": "Library",
+        "library.subtitle": "All saved and downloaded videos.",
+        "library.empty_title": "No saved videos",
+        "library.empty_body": "Save videos to watch later, with or without downloading.",
+        "downloaded.title": "Downloaded",
+        "downloaded.subtitle": "Videos with a verified local file.",
+        "downloaded.empty_title": "No downloaded videos",
+        "downloaded.empty_body": "Downloaded videos play straight from your computer.",
+        "playlists.title": "Playlists",
+        "playlists.subtitle": "Ordered collections of videos.",
+        "playlists.empty_title": "No playlists",
+        "playlists.empty_body": "Create a playlist to set the order you want to watch in.",
+        "categories.title": "Categories",
+        "categories.subtitle": "Your own topic groups.",
+        "categories.empty_title": "No categories",
+        "categories.empty_body": "Create categories like Study or Music to split up the library.",
+        "history.title": "History",
+        "history.subtitle": "What you watched recently.",
+        "history.empty_title": "History is empty",
+        "history.empty_body": "Videos you watch show up here.",
+        "downloads.title": "Downloads",
+        "downloads.subtitle": "Download queue and progress.",
+        "downloads.empty_title": "No downloads",
+        "downloads.empty_body": "Active and finished downloads show up here.",
+        "settings.title": "Settings",
+        "settings.subtitle": "App appearance and language.",
+        "settings.group_general": "General",
+        "settings.language": "Language",
+        "settings.theme": "Theme",
+        "theme.dark": "Dark",
+        "theme.light": "Light",
+        "theme.system": "System",
+    },
+}
+
+
+class Translator(QObject):
+    language_changed = Signal(str)
+
+    def __init__(self, language=DEFAULT_LANGUAGE):
+        super().__init__()
+        self._language = language if language in LANGUAGES else DEFAULT_LANGUAGE
+
+    @property
+    def language(self):
+        return self._language
+
+    def set_language(self, language):
+        if language in LANGUAGES and language != self._language:
+            self._language = language
+            self.language_changed.emit(language)
+
+    def t(self, key):
+        return _STRINGS[self._language].get(key) or _STRINGS[DEFAULT_LANGUAGE].get(key, key)
