@@ -47,3 +47,15 @@ class ProgressService:
             progress.position, progress.watched = 0.0, False
             self._library.store.save_progress(progress)
             self._library.notify()
+
+    def forget(self, video_id):
+        """Tira o vídeo do histórico (esquece posição e 'assistido'). O vídeo continua na biblioteca."""
+        if self._library.ready:
+            self._library.store.delete_progress(video_id)
+            self._library.notify()
+
+    def clear_all(self):
+        """Limpa o histórico inteiro. Biblioteca, categorias e arquivos não são tocados."""
+        if self._library.ready:
+            self._library.store.clear_history()
+            self._library.notify()

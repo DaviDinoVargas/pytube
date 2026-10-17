@@ -252,3 +252,23 @@ def test_sqlite_newer_version_is_refused(tmp_path):
     with pytest.raises(StorageError) as exc:
         SqliteStore(path)
     assert exc.value.code == "library_unsupported"
+
+
+def test_delete_progress_is_scoped_to_one_video(store):
+    v1, v2 = store.add_video(video(1)), store.add_video(video(2))
+    store.save_progress(Progress(video_id=v1.id, position=10))
+    store.save_progress(Progress(video_id=v2.id, position=20))
+    store.delete_progress(v1.id)
+    store.delete_progress(999)  # inexistente: sem erro
+    assert store.get_progress(v1.id) is None and store.get_progress(v2.id).position == 20
+    assert [p.video_id for p in store.list_progress()] == [v2.id]
+
+
+def test_batch_listings_match_individual_queries(store):
+    v1, v2 = store.add_video(video(1)), store.add_video(video(2))
+    c = store.add_category(Category(name="A"))
+    p = store.add_playlist(Playlist(name="P"))
+    store.set_video_categories(v1.id, [c.id])
+    store.set_playlist_items(p.id, [v2.id, v1.id])
+    assert store.list_category_links() == [(v1.id, c.id)]
+    assert store.list_playlist_links() == [(p.id, v2.id, 0), (p.id, v1.id, 1)]

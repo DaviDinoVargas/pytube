@@ -215,6 +215,11 @@ class JsonStore(LibraryStore):
             row = self._row_by_video(video_id)
             return from_dict(Progress, row) if row else None
 
+    def delete_progress(self, video_id):
+        with self._lock:
+            self._data["progress"] = [r for r in self._data["progress"] if r["video_id"] != video_id]
+            self._save()
+
     def clear_history(self):
         with self._lock:
             self._data["progress"] = []

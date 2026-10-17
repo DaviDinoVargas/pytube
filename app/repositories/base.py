@@ -86,6 +86,9 @@ class LibraryStore(ABC):
     def clear_history(self): ...
 
     @abstractmethod
+    def delete_progress(self, video_id): ...
+
+    @abstractmethod
     def list_progress(self): ...
 
     # vínculos em lote (a busca carrega tudo de uma vez, sem consultar vídeo por vídeo)

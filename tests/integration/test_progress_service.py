@@ -73,3 +73,25 @@ def test_inert_when_storage_not_ready(settings, tmp_path, qapp):
     library = LibraryService(StorageManager(settings, tmp_path / "ad"), ProviderChain([FakeProvider("f")]))
     service = ProgressService(library)
     assert service.get(1) is None and service.save(1, 10, 100) is None and service.resume_position(1) == 0.0
+
+
+def test_forget_removes_only_the_history_of_that_video(env):
+    service, library, video = env
+    service.save(video.id, 50, 200)
+    service.forget(video.id)
+    assert service.get(video.id) is None and library.get(video.id) is not None
+    assert service.resume_position(video.id) == 0.0
+
+
+def test_clear_all_keeps_library_categories_and_files(env):
+    from app.domain.models import Category
+
+    service, library, video = env
+    library.store.add_category(Category(name="Estudos"))
+    f = library.layout.videos / "a.mp4"
+    f.write_bytes(b"0" * 10)
+    library.attach_local_file(video.id, f)
+    service.save(video.id, 50, 200)
+    service.clear_all()
+    assert service.get(video.id) is None and library.get(video.id).local_status == "ok"
+    assert len(library.store.list_categories()) == 1 and f.exists()

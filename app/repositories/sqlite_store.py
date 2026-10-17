@@ -269,6 +269,10 @@ class SqliteStore(LibraryStore):
         data["watched"] = bool(data["watched"])
         return from_dict(Progress, data)
 
+    def delete_progress(self, video_id):
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM progress WHERE video_id = ?", (video_id,))
+
     def clear_history(self):
         with self._lock, self._db:
             self._db.execute("DELETE FROM progress")
