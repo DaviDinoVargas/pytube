@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
 
     def _on_theme(self, name):
         self._settings.theme = name
+        self.settings_page.set_theme(name)
         self._theme.apply(name)
 
     def _apply_tokens(self):
@@ -139,6 +140,7 @@ class MainWindow(QMainWindow):
         self.sidebar.set_tokens(tokens)
         self.top_bar.set_tokens(tokens)
         self.settings_button.setIcon(icon("settings", tokens["text_secondary"]))
+        self.settings_page.set_tokens(tokens)
 
     def retranslate(self):
         label = self._tr.t("nav.settings")

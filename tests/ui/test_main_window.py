@@ -1,7 +1,9 @@
+import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from app.bootstrap import create_window
+from app.styles.tokens import THEME_CHOICES, THEMES
 from app.ui.widgets.sidebar import COLLAPSED_WIDTH, EXPANDED_WIDTH
 
 VID = "dQw4w9WgXcQ"
@@ -61,10 +63,39 @@ def test_language_switch_translates_and_persists(qtbot, settings):
 def test_theme_switch_applies_stylesheet(qtbot, settings):
     w = make(qtbot, settings)
     w.show_page("settings")
-    combo = w.settings_page.theme_combo
-    combo.setCurrentIndex(combo.findData("light"))
+    w.settings_page.theme_buttons["light"].click()
     assert settings.theme == "light"
     assert "#F6F7FB" in QApplication.instance().styleSheet()
+
+
+@pytest.mark.parametrize("name", THEME_CHOICES)
+def test_every_theme_can_be_selected_and_persisted(qtbot, settings, name):
+    w = make(qtbot, settings)
+    w.show_page("settings")
+    w.settings_page.theme_buttons[name].click()
+    assert settings.theme == name
+    assert w.settings_page.theme_buttons[name].isChecked()
+    assert QApplication.instance().styleSheet()
+    reopened = make(qtbot, settings)
+    reopened.show_page("settings")
+    assert reopened.settings_page.theme_buttons[name].isChecked()
+
+
+def test_ocean_uses_gradient_and_larger_radius(qtbot, settings):
+    w = make(qtbot, settings)
+    w.show_page("settings")
+    w.settings_page.theme_buttons["ocean"].click()
+    sheet = QApplication.instance().styleSheet()
+    assert "qlineargradient" in sheet
+    assert THEMES["ocean"]["radius"]["md"] > THEMES["forest"]["radius"]["md"]
+
+
+def test_swatch_labels_follow_language(qtbot, settings):
+    w = make(qtbot, settings)
+    w.show_page("settings")
+    combo = w.settings_page.language_combo
+    combo.setCurrentIndex(combo.findData("en"))
+    assert w.settings_page.theme_buttons["sunset"].accessibleName() == "Sunset"
 
 
 def test_invalid_url_shows_error_and_valid_clears(qtbot, settings):

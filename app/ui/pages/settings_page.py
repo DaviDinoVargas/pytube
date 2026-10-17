@@ -1,9 +1,12 @@
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QComboBox, QFormLayout, QFrame, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QButtonGroup, QComboBox, QFormLayout, QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
 from app.i18n import LANGUAGES
-from app.services.settings_service import THEMES
+from app.styles.tokens import THEME_CHOICES
 from app.ui.pages.base import Page
+from app.ui.widgets.theme_swatch import ThemeSwatch
+
+SWATCH_COLUMNS = 3
 
 
 class SettingsPage(Page):
@@ -27,42 +30,72 @@ class SettingsPage(Page):
             lambda _i: self.language_selected.emit(self.language_combo.currentData())
         )
 
-        self.theme_label = QLabel()
-        self.theme_label.setObjectName("fieldLabel")
-        self.theme_combo = QComboBox()
-        self.theme_combo.setMinimumWidth(240)
-        for name in THEMES:
-            self.theme_combo.addItem("", name)
-        self.theme_combo.setCurrentIndex(self.theme_combo.findData(theme))
-        self.theme_combo.currentIndexChanged.connect(
-            lambda _i: self.theme_selected.emit(self.theme_combo.currentData())
-        )
+        self.theme_title = QLabel()
+        self.theme_title.setObjectName("groupTitle")
+        self.theme_hint = QLabel()
+        self.theme_hint.setObjectName("pageSubtitle")
+        self.theme_hint.setWordWrap(True)
 
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 16, 20, 20)
-        card_layout.setSpacing(12)
-        card_layout.addWidget(self.group_title)
+        self.theme_buttons = {}
+        self._theme_group = QButtonGroup(self)
+        self._theme_group.setExclusive(True)
+        swatches = QWidget()
+        grid = QGridLayout(swatches)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(14)
+        for i, name in enumerate(THEME_CHOICES):
+            swatch = ThemeSwatch(name, name, "#8B7CF6")
+            swatch.clicked.connect(lambda _=False, n=name: self.theme_selected.emit(n))
+            self._theme_group.addButton(swatch)
+            self.theme_buttons[name] = swatch
+            grid.addWidget(swatch, i // SWATCH_COLUMNS, i % SWATCH_COLUMNS)
+        grid.setColumnStretch(SWATCH_COLUMNS, 1)
+        self.set_theme(theme)
+
+        general = self._card()
+        general.layout().addWidget(self.group_title)
         form = QFormLayout()
         form.setHorizontalSpacing(24)
         form.setVerticalSpacing(14)
         form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         form.addRow(self.language_label, self.language_combo)
-        form.addRow(self.theme_label, self.theme_combo)
-        card_layout.addLayout(form)
+        general.layout().addLayout(form)
 
-        self.body.addWidget(card)
+        appearance = self._card()
+        appearance.layout().addWidget(self.theme_title)
+        appearance.layout().addWidget(self.theme_hint)
+        appearance.layout().addWidget(swatches)
+
+        self.body.addWidget(general)
+        self.body.addWidget(appearance)
         self.body.addStretch(1)
         self.retranslate()
 
+    @staticmethod
+    def _card():
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 20)
+        layout.setSpacing(12)
+        return card
+
+    def set_theme(self, name):
+        if name in self.theme_buttons:
+            self.theme_buttons[name].setChecked(True)
+
+    def set_tokens(self, tokens):
+        for swatch in self.theme_buttons.values():
+            swatch.set_ring_color(tokens["accent"])
+
     def retranslate(self):
         super().retranslate()
-        if not hasattr(self, "theme_combo"):
+        if not hasattr(self, "theme_buttons"):
             return
         t = self._tr.t
         self.group_title.setText(t("settings.group_general").upper())
         self.language_label.setText(t("settings.language"))
-        self.theme_label.setText(t("settings.theme"))
-        for i, name in enumerate(THEMES):
-            self.theme_combo.setItemText(i, t(f"theme.{name}"))
+        self.theme_title.setText(t("settings.theme").upper())
+        self.theme_hint.setText(t("settings.theme_hint"))
+        for name, swatch in self.theme_buttons.items():
+            swatch.set_label(t(f"theme.{name}"))
