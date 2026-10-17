@@ -3,9 +3,12 @@ from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from app import APP_NAME
+from app.infrastructure.media.ffmpeg import MediaError, bundled_root, locate
+from app.services.download_service import DownloadManager
 from app.services.library_service import LibraryService
 from app.styles.icons import icon
-from app.ui.pages.placeholder_pages import CategoriesPage, ContinuePage, DownloadsPage, HistoryPage, PlaylistsPage
+from app.ui.pages.downloads_page import DownloadsPage
+from app.ui.pages.placeholder_pages import CategoriesPage, ContinuePage, HistoryPage, PlaylistsPage
 from app.ui.pages.video_pages import DownloadedPage, HomePage, LibraryPage
 from app.ui.pages.watch_page import WatchPage, watch_url
 from app.ui.workers import run_async
@@ -19,11 +22,16 @@ DEFAULT_PAGE = "home"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings, translator, theme, storage, providers, thumbnails=None):
+    def __init__(self, settings, translator, theme, storage, providers, thumbnails=None, tools_getter=None):
         super().__init__()
         self._settings = settings
         self._storage = storage
         self.library = LibraryService(storage, providers, thumbnails)
+        self._tools = None
+        self._tools_getter = tools_getter
+        self.downloads = DownloadManager(
+            self.library, providers, self._ffmpeg_tools, max_concurrent=settings.download_concurrent
+        )
         self._tr = translator
         self._theme = theme
         self.setWindowTitle(APP_NAME)
@@ -49,15 +57,16 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages = {}
         library = self.library
+        video_args = dict(can_download=lambda: library.ready, download_status=self.downloads.status_for_video)
         for page in (
-            HomePage(translator, library, tokens),
+            HomePage(translator, library, tokens, **video_args),
             ContinuePage(translator),
-            LibraryPage(translator, library, tokens),
-            DownloadedPage(translator, library, tokens),
+            LibraryPage(translator, library, tokens, **video_args),
+            DownloadedPage(translator, library, tokens, **video_args),
             PlaylistsPage(translator),
             CategoriesPage(translator),
             HistoryPage(translator),
-            DownloadsPage(translator),
+            DownloadsPage(translator, self.downloads, library, tokens),
         ):
             self._add_page(page)
         self.settings_page = SettingsPage(translator, settings.language, settings.theme, storage)
@@ -66,15 +75,18 @@ class MainWindow(QMainWindow):
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
-        self.watch_page = WatchPage(translator, library, tokens)
+        self.watch_page = WatchPage(translator, library, tokens, self.downloads, self._ask_download_consent)
         self.watch_page.back_requested.connect(self._go_back)
         self.watch_page.message.connect(self.top_bar.show_message)
         self._add_page(self.watch_page)
         for page in self.pages.values():
             if hasattr(page, "video_opened"):
                 page.video_opened.connect(self.open_saved_video)
+            if hasattr(page, "video_action"):
                 page.video_action.connect(self._on_video_action)
+        self.pages["downloads"].message.connect(self.top_bar.show_message)
         library.changed.connect(self._on_library_changed)
+        self.downloads.queue_changed.connect(self._on_downloads_changed)
         column.addWidget(self.stack, 1)
 
         # Rodapé com a engrenagem de configurações no canto inferior direito
@@ -168,6 +180,42 @@ class MainWindow(QMainWindow):
     def _go_back(self):
         self.show_page(self._back_page if self._back_page in self.pages else DEFAULT_PAGE)
 
+    def _ffmpeg_tools(self):
+        """ffmpeg/ffprobe verificados (a checagem roda uma vez). Levanta MediaError se faltarem."""
+        if self._tools is None:
+            if self._tools_getter is not None:
+                self._tools = self._tools_getter()
+            else:
+                tools = locate(bundled_root(), self._settings.ffmpeg_path or None)
+                if tools is None:
+                    raise MediaError("ffmpeg_missing", "nenhum ffmpeg encontrado")
+                self._tools = tools.check()
+        return self._tools
+
+    def _ask_download_consent(self):
+        """Pede, uma única vez, a confirmação de que o download é para uso pessoal e legítimo."""
+        if self._settings.download_consent:
+            return True
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle(self._tr.t("dl.consent_title"))
+        box.setText(self._tr.t("dl.consent_body"))
+        ok = box.addButton(self._tr.t("dl.consent_ok"), QMessageBox.AcceptRole)
+        box.addButton(self._tr.t("storage.cancel"), QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is ok:
+            self._settings.download_consent = True
+            return True
+        return False
+
+    def _on_downloads_changed(self):
+        self.sidebar.set_badge("downloads", self.downloads.active_count())
+        self._on_library_changed()
+
+    def closeEvent(self, event):
+        self.downloads.shutdown()
+        super().closeEvent(event)
+
     def _on_library_changed(self):
         for page in self.pages.values():
             if hasattr(page, "mark_dirty"):
@@ -177,7 +225,9 @@ class MainWindow(QMainWindow):
         video = self.library.get(video_id)
         if video is None:
             return
-        if action == "browser":
+        if action == "download":
+            self.open_saved_video(video_id)
+        elif action == "browser":
             url = watch_url(video.source_id)
             if url:
                 QDesktopServices.openUrl(QUrl(url))
@@ -203,6 +253,7 @@ class MainWindow(QMainWindow):
     def start_background_checks(self):
         """Confere em segundo plano se os arquivos baixados ainda existem."""
         if self.library.ready:
+            self.downloads.cleanup_orphans()
             run_async(self.library.validate_all)
 
     def _on_language(self, code):

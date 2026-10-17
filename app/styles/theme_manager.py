@@ -111,6 +111,11 @@ QFrame#stateBadge[state="failed"] {{ background: {t['error']}; }}
 QFrame#stateBadge[state="missing"] QLabel, QFrame#stateBadge[state="invalid"] QLabel,
 QFrame#stateBadge[state="failed"] QLabel {{ color: #1B1B1B; }}
 
+QProgressBar {{ background: {t['border']}; border: none; border-radius: 4px; }}
+QProgressBar::chunk {{ background: {t['accent']}; border-radius: 4px; }}
+QProgressBar[state="done"]::chunk {{ background: {t['success']}; }}
+QProgressBar[state="failed"]::chunk {{ background: {t['error']}; }}
+
 QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
 QLabel#watchTitle {{ font-size: 21px; font-weight: 700; }}
 QLabel#playerMessage {{ color: #FFFFFF; font-size: 14px; max-width: 520px; }}

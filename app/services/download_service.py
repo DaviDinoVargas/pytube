@@ -247,34 +247,36 @@ class DownloadManager(QObject):
 
     # -- execução ----------------------------------------------------------------------
     def _worker(self, task, cancel):
-        tmp_dir = None
+        outcome = (COMPLETED, "", "")
         try:
             self._notify(task, force=True, transition=True)
-            tmp_dir = self._execute(task, cancel)
+            self._execute(task, cancel)
         except (DownloadCancelled, MergeCancelled):
-            task.speed, task.eta = 0.0, None
-            self._set_status(task, CANCELLED)
+            outcome = (CANCELLED, "", "")
         except ProviderError as exc:
-            self._fail(task, exc.code, exc.detail)
+            outcome = (FAILED, exc.code, exc.detail)
         except (MediaError, StorageError) as exc:
-            self._fail(task, exc.code, exc.detail)
+            outcome = (FAILED, exc.code, exc.detail)
         except OSError as exc:
-            self._fail(task, "io_error", str(exc)[:300])
+            outcome = (FAILED, "io_error", str(exc)[:300])
         except Exception as exc:  # uma falha inesperada nunca derruba o aplicativo
-            self._fail(task, "failed", repr(exc)[:300])
-        finally:
-            tmp = self._tmp_dir(task)
-            if tmp is not None:
-                shutil.rmtree(tmp, ignore_errors=True)
-            with self._lock:
-                self._cancel.pop(task.id, None)
-                self._threads.pop(task.id, None)
-            self._pump()
+            outcome = (FAILED, "failed", repr(exc)[:300])
+        # O estado final só é publicado depois da limpeza: quem vê "concluído" já encontra tmp/ vazia.
+        tmp = self._tmp_dir(task)
+        if tmp is not None:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self._finish(task, *outcome)
+        with self._lock:
+            self._cancel.pop(task.id, None)
+            self._threads.pop(task.id, None)
+        self._pump()
 
-    def _fail(self, task, code, detail=""):
+    def _finish(self, task, status, code="", detail=""):
         task.error_code, task.error_detail = code, detail
         task.speed, task.eta = 0.0, None
-        self._set_status(task, FAILED)
+        if status == COMPLETED:
+            task.progress = 1.0
+        self._set_status(task, status)
 
     def _tmp_dir(self, task):
         if not self._library.ready:
@@ -338,9 +340,6 @@ class DownloadManager(QObject):
         if task.replace and old is not None and old != final.resolve() and old.is_file():
             self._delete_inside_library(old)
         task.final_path = str(final)
-        task.progress, task.speed, task.eta = 1.0, 0.0, None
-        self._set_status(task, COMPLETED)
-        return tmp_dir
 
     def _download_parts(self, task, info, parts, tmp_dir, cancel):
         paths = []

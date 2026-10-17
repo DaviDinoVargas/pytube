@@ -349,3 +349,14 @@ def test_player_area_keeps_16_9(qtbot, window_factory, fake_provider):
     w.resize(900, 700)
     QApplication.processEvents()
     assert abs(area.height() - area.width() * 9 / 16) <= 2
+
+
+def test_player_never_pushes_actions_out_of_view(qtbot, window_factory, fake_provider):
+    w = window_factory()
+    w.resize(1400, 760)
+    w.library.save_info(fake_provider.fetch_info(VID))
+    w.open_saved_video(1)
+    QApplication.processEvents()
+    page = w.watch_page
+    assert page.player.height() <= page.height() * 0.58 + 2
+    assert abs(page.player.height() - page.player.width() * 9 / 16) <= 2  # proporção preservada
