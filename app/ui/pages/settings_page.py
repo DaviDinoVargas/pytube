@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QFrame,
@@ -28,9 +29,11 @@ class SettingsPage(Page):
     change_storage_requested = Signal()
     open_storage_requested = Signal()
 
-    def __init__(self, translator, language, theme, storage=None):
+    def __init__(self, translator, language, theme, storage=None, settings=None):
         super().__init__(translator)
         self._storage = storage
+        self._settings = settings
+        self._sections = []
         self.group_title = QLabel()
         self.group_title.setObjectName("groupTitle")
 
@@ -75,6 +78,12 @@ class SettingsPage(Page):
         form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         form.addRow(self.language_label, self.language_combo)
         general.layout().addLayout(form)
+        self.restore_check = QCheckBox()
+        self.restore_check.setVisible(settings is not None)
+        if settings is not None:
+            self.restore_check.setChecked(settings.restore_last_page)
+            self.restore_check.toggled.connect(lambda v: setattr(settings, "restore_last_page", v))
+        general.layout().addWidget(self.restore_check)
 
         appearance = self._card()
         appearance.layout().addWidget(self.theme_title)
@@ -156,6 +165,11 @@ class SettingsPage(Page):
         self.storage_warning.setVisible(bool(self.storage_warning.text()))
         self.open_folder_button.setEnabled(status == STATUS_READY)
 
+    def add_section(self, card):
+        """Acrescenta uma seção (cartão) antes do espaço final da página."""
+        self._sections.append(card)
+        self.body.insertWidget(self.body.count() - 1, card)
+
     @staticmethod
     def _card():
         card = QFrame()
@@ -184,6 +198,9 @@ class SettingsPage(Page):
         self.theme_hint.setText(t("settings.theme_hint"))
         for name, swatch in self.theme_buttons.items():
             swatch.set_label(t(f"theme.{name}"))
+        self.restore_check.setText(t("settings.restore_last_page"))
+        for card in self._sections:
+            card.retranslate()
         self.storage_title.setText(t("settings.group_storage").upper())
         for key, (name, _value) in self.storage_rows.items():
             name.setText(t(f"settings.storage_{key}"))
