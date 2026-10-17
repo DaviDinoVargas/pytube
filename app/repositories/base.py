@@ -85,6 +85,16 @@ class LibraryStore(ABC):
     @abstractmethod
     def clear_history(self): ...
 
+    @abstractmethod
+    def list_progress(self): ...
+
+    # vínculos em lote (a busca carrega tudo de uma vez, sem consultar vídeo por vídeo)
+    @abstractmethod
+    def list_category_links(self): ...
+
+    @abstractmethod
+    def list_playlist_links(self): ...
+
     # migração e backup
     @abstractmethod
     def export_data(self): ...

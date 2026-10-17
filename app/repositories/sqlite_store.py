@@ -273,6 +273,20 @@ class SqliteStore(LibraryStore):
         with self._lock, self._db:
             self._db.execute("DELETE FROM progress")
 
+    def list_progress(self):
+        out = []
+        for row in self._all("SELECT * FROM progress"):
+            data = dict(row)
+            data["watched"] = bool(data["watched"])
+            out.append(from_dict(Progress, data))
+        return out
+
+    def list_category_links(self):
+        return [(r[0], r[1]) for r in self._all("SELECT video_id, category_id FROM video_categories")]
+
+    def list_playlist_links(self):
+        return [(r[0], r[1], r[2]) for r in self._all("SELECT playlist_id, video_id, position FROM playlist_items")]
+
     # migração e backup
     def export_data(self):
         data = empty_export()

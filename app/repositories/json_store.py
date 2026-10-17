@@ -220,6 +220,18 @@ class JsonStore(LibraryStore):
             self._data["progress"] = []
             self._save()
 
+    def list_progress(self):
+        with self._lock:
+            return [from_dict(Progress, row) for row in self._data["progress"]]
+
+    def list_category_links(self):
+        with self._lock:
+            return [(r[0], r[1]) for r in self._data["video_categories"]]
+
+    def list_playlist_links(self):
+        with self._lock:
+            return [(r[0], r[1], r[2]) for r in self._data["playlist_items"]]
+
     # migração e backup
     def export_data(self):
         with self._lock:
