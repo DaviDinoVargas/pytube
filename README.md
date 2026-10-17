@@ -14,7 +14,17 @@ Feito em Python com PySide6 (Qt), para Windows (roda também em Linux e macOS a 
 - **Continuar assistindo**, histórico por dia e retomada da posição.
 - **Manutenção**: espaço em disco, arquivos ausentes ou soltos, backups (manual e automático), exportação JSON/CSV.
 - **Mini player** flutuante sempre por cima (botão no player ou tecla `I`).
-- **Temas** (escuro, claro, sistema, oceano, floresta, pôr do sol) e **idiomas** (português do Brasil e inglês).
+- **21 temas** (escuro, claro, sistema, oceano, floresta, pôr do sol e mais 16: Minimalista, Cinema, Vidro fosco, Relevo suave,
+  Nord, Dracula, Terminal, Pixel Art, Luxo, Pastel, Editorial, Fluent, Cyberpunk, Monocromático, Objetos físicos e Terra),
+  todos com contraste de texto verificado por teste (WCAG AA), e **idiomas** (português do Brasil e inglês).
+- **6 layouts**, combináveis com qualquer tema (*Configurações → Layout*, com prévia):
+  - **Biblioteca clássica**: menu lateral, player central, relacionados abaixo e painel de detalhes opcional.
+  - **Streaming**: início com vídeo em destaque, fileiras horizontais e recomendações feitas só com a sua biblioteca.
+  - **Modo cinema**: o player ocupa a janela; controles e título somem quando o mouse para.
+  - **Gerenciador**: biblioteca em tabela (colunas escolhíveis, ordenação, seleção em lote) com filtros avançados no topo.
+  - **Estação de trabalho**: biblioteca à esquerda, player no centro, detalhes, **notas por vídeo** e categorias à direita.
+  - **Compacto e flutuante**: janela pequena com controles essenciais e **fila de reprodução**; pode ficar por cima das outras.
+- **Fila de reprodução** em qualquer layout (menu ⋮ de um vídeo → *Adicionar à fila* / *Tocar em seguida*).
 - A engrenagem fica no canto inferior direito.
 
 ## Instalação (a partir do código-fonte)
