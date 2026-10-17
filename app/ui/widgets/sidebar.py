@@ -19,6 +19,7 @@ class Sidebar(QFrame):
         self._tokens = tokens
         self._collapsed = collapsed
         self._buttons = {}
+        self._badges = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 14, 12, 14)
@@ -73,6 +74,15 @@ class Sidebar(QFrame):
     def collapsed(self):
         return self._collapsed
 
+    def set_badge(self, key, count):
+        """Contador ao lado do item (ex.: downloads em andamento). Zero esconde o contador."""
+        if self._badges.get(key, 0) != count:
+            self._badges[key] = count
+            self.refresh()
+
+    def badge(self, key):
+        return self._badges.get(key, 0)
+
     def set_tokens(self, tokens):
         self._tokens = tokens
         self.refresh()
@@ -86,14 +96,16 @@ class Sidebar(QFrame):
         self._toggle.setAccessibleName(self._toggle.toolTip())
         for key, btn in self._buttons.items():
             label = self._tr.t(f"nav.{key}")
-            btn.setToolTip(label)
-            btn.setAccessibleName(label)
+            count = self._badges.get(key, 0)
+            shown = f"{label} · {count}" if count else label
+            btn.setToolTip(shown)
+            btn.setAccessibleName(shown)
             if self._collapsed:
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
                 btn.setFixedWidth(COLLAPSED_WIDTH - 24)
             else:
-                btn.setText("  " + label)
+                btn.setText("  " + shown)
                 btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
                 btn.setFixedWidth(EXPANDED_WIDTH - 24)
         self._refresh_icons()

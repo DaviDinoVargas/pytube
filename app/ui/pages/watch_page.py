@@ -3,10 +3,12 @@ import re
 from PySide6.QtCore import QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QStackedWidget,
     QToolButton,
@@ -15,11 +17,16 @@ from PySide6.QtWidgets import (
 )
 
 from app.domain import states
+from app.domain.errors import DuplicateError, StorageError
 from app.domain.states import format_duration, video_state
+from app.infrastructure.providers import quality
 from app.infrastructure.providers.base import ProviderError, VideoInfo
+from app.services import download_service as ds
 from app.services.storage_service import format_bytes
 from app.styles.icons import icon
+from app.ui.errors import describe_error
 from app.ui.pages.base import Page
+from app.ui.widgets.download_row import status_text
 from app.ui.widgets.player_area import PlayerArea
 from app.ui.widgets.video_card import format_added
 from app.ui.workers import run_async
@@ -53,9 +60,16 @@ class WatchPage(Page):
     back_requested = Signal()
     message = Signal(str, bool)  # texto, é_erro
 
-    def __init__(self, translator, library, tokens):
+    def __init__(self, translator, library, tokens, downloads, consent=lambda: True):
         super().__init__(translator)
         self._library = library
+        self._downloads = downloads
+        self._consent = consent
+        self._streams = None  # None: ainda não carregadas
+        self._streams_error = False
+        self._streams_token = 0
+        self._player_height = None
+        self._user_height = None  # só a escolha explícita do usuário; o padrão automático não conta
         self._tokens = tokens
         self._info = None
         self._video = None
@@ -146,6 +160,52 @@ class WatchPage(Page):
         self.local_label.setObjectName("statusOk")
         col.addWidget(self.local_label)
 
+        # download: qualidade + botão + andamento
+        panel = QFrame()
+        panel.setObjectName("card")
+        panel.setMaximumWidth(1000)
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 12, 16, 12)
+        panel_lay.setSpacing(8)
+        pick = QHBoxLayout()
+        pick.setSpacing(10)
+        self.quality_label = QLabel()
+        self.quality_label.setObjectName("fieldLabel")
+        self.quality_combo = QComboBox()
+        self.quality_combo.setMinimumWidth(190)
+        self.quality_combo.activated.connect(lambda _i: setattr(self, "_user_height", self.quality_combo.currentData()))
+        self.download_button = QPushButton()
+        self.download_button.setObjectName("primary")
+        self.download_button.setCursor(Qt.PointingHandCursor)
+        self.download_button.clicked.connect(self.start_download)
+        self.quality_retry = QPushButton()
+        self.quality_retry.setObjectName("linkButton")
+        self.quality_retry.setCursor(Qt.PointingHandCursor)
+        self.quality_retry.clicked.connect(self._load_streams)
+        pick.addWidget(self.quality_label)
+        pick.addWidget(self.quality_combo)
+        pick.addWidget(self.download_button)
+        pick.addWidget(self.quality_retry)
+        pick.addStretch(1)
+        panel_lay.addLayout(pick)
+        progress_row = QHBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1000)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(8)
+        self.progress_label = QLabel()
+        self.progress_label.setObjectName("cardMeta")
+        self.cancel_button = QToolButton()
+        self.cancel_button.setObjectName("iconButton")
+        self.cancel_button.setCursor(Qt.PointingHandCursor)
+        self.cancel_button.clicked.connect(self._cancel_download)
+        progress_row.addWidget(self.progress_bar, 1)
+        progress_row.addWidget(self.cancel_button)
+        panel_lay.addLayout(progress_row)
+        panel_lay.addWidget(self.progress_label)
+        self.download_panel = panel
+        col.addWidget(panel)
+
         card = QFrame()
         card.setObjectName("card")
         card_lay = QVBoxLayout(card)
@@ -165,13 +225,21 @@ class WatchPage(Page):
         col.addStretch(1)
         self.stack.addWidget(content)
 
+        downloads.task_changed.connect(self._on_task_changed)
+        library.changed.connect(self._on_library_changed)
         self.retranslate()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # o player ocupa no máximo ~58% da altura: título, ações e download continuam à vista
+        self.player.set_max_height(self.height() * 0.58)
 
     # -- ciclo de vida ------------------------------------------------------------
     def open_source_id(self, source_id):
         """Abre um vídeo pelo id. Se já está na biblioteca, não consulta a rede."""
         self._last_id = source_id
         self._request += 1
+        self._reset_download_choice(source_id)
         video = self._library.find(source_id) if self._library.ready else None
         if video is not None:
             self._show_video(video)
@@ -190,7 +258,12 @@ class WatchPage(Page):
         if video is not None:
             self._last_id = video.source_id
             self._request += 1
+            self._reset_download_choice(video.source_id)
             self._show_video(video)
+
+    def _reset_download_choice(self, source_id):
+        if source_id != getattr(self._info, "source_id", None):
+            self._user_height = None
 
     def retry(self):
         if self._last_id:
@@ -230,6 +303,7 @@ class WatchPage(Page):
         self.player.set_thumbnail(self._library.thumbnail_path(self._video) if self._video else None)
         self._render_actions()
         self._render_description()
+        self._init_streams()
         self.stack.setCurrentIndex(_CONTENT)
 
     def _render_actions(self):
@@ -250,6 +324,7 @@ class WatchPage(Page):
             )
         self.local_label.setText(local)
         self.local_label.setVisible(bool(local))
+        self._render_download()
 
     def _render_description(self):
         text = (self._info.description or "").strip()
@@ -265,6 +340,187 @@ class WatchPage(Page):
         self.description_label.setText(text)
         self.description_toggle.setVisible(long)
         self.description_toggle.setText(self._tr.t("watch.desc_less" if self._description_open else "watch.desc_more"))
+
+    # -- download -----------------------------------------------------------------------
+    def set_player_height(self, height):
+        """Altura do player (v. player): a qualidade padrão do download acompanha o que está tocando."""
+        self._player_height = height
+        self._fill_quality_combo()
+
+    def _init_streams(self):
+        info = self._info
+        self._streams = list(info.streams) if info is not None and info.streams else None
+        self._streams_error = False
+        self._fill_quality_combo()
+        if self._streams is None and self._library.ready:
+            self._load_streams()
+
+    def _load_streams(self):
+        if self._info is None:
+            return
+        self._streams_token += 1
+        token, source_id = self._streams_token, self._info.source_id
+        self._streams_error = False
+        self._fill_quality_combo()
+        run_async(
+            lambda: self._library.fetch_info(source_id),
+            lambda info: self._on_streams(token, info),
+            lambda exc: self._on_streams_failed(token),
+        )
+
+    def _on_streams(self, token, info):
+        if token != self._streams_token:
+            return
+        self._streams = list(info.streams)
+        self._fill_quality_combo()
+
+    def _on_streams_failed(self, token):
+        if token != self._streams_token:
+            return
+        self._streams, self._streams_error = None, True
+        self._fill_quality_combo()
+
+    def _quality_text(self, height):
+        streams = self._streams or []
+        selection = None
+        try:
+            selection = quality.pick(streams, height)
+        except ProviderError:
+            pass
+        label = selection.label if selection else f"{height}p"
+        size = 0
+        if selection:
+            size = (selection.video.filesize or 0) + ((selection.audio.filesize or 0) if selection.audio else 0)
+        return f"{label} · ~{format_bytes(size)}" if size else label
+
+    def _fill_quality_combo(self):
+        t = self._tr.t
+        combo = self.quality_combo
+        combo.blockSignals(True)
+        combo.clear()
+        if self._streams:
+            heights = quality.available_heights(self._streams)
+            for height in heights:
+                combo.addItem(self._quality_text(height), height)
+            wanted = self._user_height if self._user_height in heights else quality.default_height(self._streams, self._player_height)
+            index = combo.findData(wanted)
+            combo.setCurrentIndex(index if index >= 0 else 0)
+            if not heights:
+                combo.addItem(t("dl.no_qualities"), None)
+        elif self._streams_error:
+            combo.addItem(t("dl.no_qualities"), None)
+        else:
+            combo.addItem(t("dl.loading_qualities"), None)
+        combo.blockSignals(False)
+        self._render_download()
+
+    def _current_task(self):
+        if self._video is None:
+            return None
+        task = self._downloads.task_for_video(self._video.id)
+        return task if task is not None and task.status in ds.ACTIVE else None
+
+    def _render_download(self):
+        t = self._tr.t
+        has_height = self.quality_combo.currentData() is not None
+        busy = self._current_task()
+        downloaded = self._video is not None and video_state(self._video) == states.DOWNLOADED
+        self.quality_label.setText(t("dl.quality"))
+        self.download_button.setText(t("dl.button_again" if downloaded else "dl.button"))
+        self.download_button.setIcon(icon("downloads", self._tokens["text_on_accent"], 18))
+        self.quality_combo.setEnabled(has_height and busy is None)
+        self.download_button.setEnabled(has_height and busy is None and self._library.ready)
+        self.quality_retry.setVisible(self._streams_error)
+        self.quality_retry.setText(t("watch.retry"))
+        self.progress_bar.setVisible(busy is not None)
+        self.progress_label.setVisible(busy is not None)
+        self.cancel_button.setVisible(busy is not None)
+        self.cancel_button.setIcon(icon("close", self._tokens["text_secondary"], 20))
+        self.cancel_button.setToolTip(t("dl.cancel"))
+        self.cancel_button.setAccessibleName(t("dl.cancel"))
+        if busy is not None:
+            self._render_progress(busy)
+
+    def _render_progress(self, task):
+        self.progress_label.setText(status_text(self._tr, task))
+        if task.status in (ds.RESOLVING, ds.FINALIZING):
+            self.progress_bar.setRange(0, 0)
+        else:
+            self.progress_bar.setRange(0, 1000)
+            self.progress_bar.setValue(int(task.progress * 1000))
+
+    def _on_task_changed(self, task_id):
+        task = self._downloads.get(task_id)
+        if task is None or self._video is None or task.video_id != self._video.id:
+            return
+        if task.status in ds.ACTIVE:
+            self._render_download()
+        else:
+            self._video = self._library.get(self._video.id) or self._video
+            self._render_actions()
+            if task.status == ds.FAILED:
+                self.message.emit(describe_error(self._tr, task.error_code), True)
+
+    def _on_library_changed(self):
+        if self._video is None or self.stack.currentIndex() != _CONTENT:
+            return
+        fresh = self._library.get(self._video.id)
+        if fresh is not None:
+            self._video = fresh
+            self._render_actions()
+
+    def start_download(self):
+        height = self.quality_combo.currentData()
+        if height is None or self._info is None or not self._library.ready:
+            return
+        if not self._consent():
+            return
+        if self._video is None:  # baixar também guarda o vídeo na biblioteca
+            info, token = self._info, self._request
+            self.download_button.setEnabled(False)
+            run_async(
+                lambda: self._library.save_info(info),
+                lambda result: self._saved_then_enqueue(token, result[0], height),
+                lambda exc: self.message.emit(describe_error(self._tr, getattr(exc, "code", "")), True),
+            )
+            return
+        self._enqueue(self._video.id, height)
+
+    def _saved_then_enqueue(self, token, video, height):
+        if token == self._request:
+            self._show_video(video)
+        self._enqueue(video.id, height)
+
+    def _enqueue(self, video_id, height, replace=False):
+        try:
+            self._downloads.enqueue(video_id, height, replace=replace)
+        except DuplicateError as exc:
+            if "already_downloaded" in exc.detail and not replace:
+                if self._confirm_download_again():
+                    self._enqueue(video_id, height, replace=True)
+                return
+            self.message.emit(describe_error(self._tr, "already_queued"), True)
+            return
+        except StorageError as exc:
+            self.message.emit(describe_error(self._tr, exc.code), True)
+            return
+        self.message.emit(self._tr.t("dl.queued_toast"), False)
+        self._render_download()
+
+    def _cancel_download(self):
+        task = self._current_task()
+        if task is not None:
+            self._downloads.cancel(task.id)
+
+    def _confirm_download_again(self):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(self._tr.t("dl.confirm_again_title"))
+        box.setText(self._tr.t("dl.confirm_again_body"))
+        ok = box.addButton(self._tr.t("dl.confirm_again_ok"), QMessageBox.AcceptRole)
+        box.addButton(self._tr.t("storage.cancel"), QMessageBox.RejectRole)
+        box.exec()
+        return box.clickedButton() is ok
 
     def _toggle_description(self):
         self._description_open = not self._description_open
@@ -326,6 +582,8 @@ class WatchPage(Page):
         self.browser_button.setIcon(icon("external", tokens["text_primary"], 18))
         if self._info is not None:
             self._render_actions()
+        else:
+            self._render_download()
 
     def retranslate(self):
         t = self._tr.t

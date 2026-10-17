@@ -18,6 +18,7 @@ class PlayerArea(QFrame):
         self._tr = translator
         self._tokens = tokens
         self._pixmap = QPixmap()
+        self._max_height = None
         self.setMaximumWidth(MAX_WIDTH)
         policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         policy.setHeightForWidth(True)
@@ -43,6 +44,11 @@ class PlayerArea(QFrame):
 
     def heightForWidth(self, width):
         return int(min(width, MAX_WIDTH) * 9 / 16)
+
+    def set_max_height(self, height):
+        """Limita a altura (e, por consequência, a largura: a proporção 16:9 é mantida)."""
+        self._max_height = max(180, int(height))
+        self.setMaximumWidth(min(MAX_WIDTH, int(self._max_height * 16 / 9)))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

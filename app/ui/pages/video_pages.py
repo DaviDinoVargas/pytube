@@ -16,9 +16,10 @@ class VideoPage(Page):
     video_opened = Signal(int)
     video_action = Signal(int, str)
 
-    def __init__(self, translator, library, tokens, can_download=lambda: False):
+    def __init__(self, translator, library, tokens, can_download=lambda: False, download_status=lambda video_id: None):
         super().__init__(translator)
         self._library = library
+        self._download_status = download_status
         self._tokens = tokens
         self._can_download = can_download
         self._dirty = True
@@ -36,7 +37,7 @@ class VideoPage(Page):
             self._tr,
             self._tokens,
             video,
-            video_state(video),
+            video_state(video, self._download_status(video.id)),
             self._library.thumbnail_path(video),
             can_download=self._can_download(),
         )
