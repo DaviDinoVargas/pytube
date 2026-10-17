@@ -2,7 +2,7 @@ from datetime import datetime
 
 from PySide6.QtCore import QLocale, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget
 
 from app.domain import states
 from app.domain.states import format_duration
@@ -70,16 +70,58 @@ class StateBadge(QFrame):
         self.hide()
 
 
-class VideoCard(QFrame):
+class ActionsMixin:
+    """Menu de ações compartilhado por cards e linhas de lista. Exige: video, state, _tr, _can_download, _organize
+    e os sinais open_requested / action_requested."""
+
+    def _build_menu(self):
+        menu = QMenu(self)
+        self._fill_menu(menu)
+        menu.aboutToShow.connect(lambda m=menu: self._fill_menu(m))  # categorias e playlists sempre atuais ao abrir
+        return menu
+
+    def _fill_menu(self, menu):
+        menu.clear()
+        t = self._tr.t
+        entries = [("open", t("card.menu_open"))]
+        if self._can_download and self.state in (states.SAVED, states.MISSING, states.INVALID, states.FAILED):
+            entries.append(("download", t("card.menu_download")))
+        entries.append(("browser", t("card.menu_browser")))
+        if self.state == states.DOWNLOADED:
+            entries.append(("folder", t("card.menu_folder")))
+        for key, label in entries:
+            action = menu.addAction(label)
+            action.triggered.connect(lambda _=False, k=key: self._emit_action(k))
+        if self._organize is not None:
+            menu.addMenu(self._organize.categories_menu([self.video.id], menu))
+            menu.addMenu(self._organize.playlists_menu([self.video.id], menu))
+        remove = menu.addAction(t("card.menu_remove"))
+        remove.triggered.connect(lambda _=False: self._emit_action("remove"))
+
+    def _emit_action(self, key):
+        if key == "open":
+            self.open_requested.emit(self.video.id)
+        else:
+            self.action_requested.emit(self.video.id, key)
+
+    def action_keys(self):
+        return [a.text() for a in self.menu_button.menu().actions()]
+
+
+
+class VideoCard(ActionsMixin, QFrame):
     open_requested = Signal(int)
     action_requested = Signal(int, str)
+    selection_changed = Signal(int, bool)
 
-    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False):
+    def __init__(self, translator, tokens, video, state, thumb_path=None, can_download=False, organize=None):
         super().__init__()
         self.video = video
         self.state = state
         self._tr = translator
         self._can_download = can_download
+        self._organize = organize
+        self._selectable = False
         t = translator.t
         self.setObjectName("videoCard")
         self.setProperty("state", state)
@@ -121,6 +163,15 @@ class VideoCard(QFrame):
             badge.move(8, 8)
             badge.show()
             self.state_badge = badge
+
+        self.check = QCheckBox(thumb)
+        self.check.setObjectName("cardCheck")
+        self.check.setToolTip(translator.t("card.select"))
+        self.check.setAccessibleName(translator.t("card.select"))
+        self.check.move(THUMB_W - 34, 8)
+        self.check.setFocusPolicy(Qt.NoFocus)
+        self.check.toggled.connect(lambda checked: self.selection_changed.emit(self.video.id, checked))
+        self.check.hide()
 
         info = QWidget()
         info_row = QHBoxLayout(info)
@@ -165,35 +216,28 @@ class VideoCard(QFrame):
         self.layout().activate()
         self.setFixedHeight(self.layout().sizeHint().height())
 
-    # -- menu -----------------------------------------------------------------
-    def _build_menu(self):
-        t = self._tr.t
-        menu = QMenu(self)
-        entries = [("open", t("card.menu_open"))]
-        if self._can_download and self.state in (states.SAVED, states.MISSING, states.INVALID, states.FAILED):
-            entries.append(("download", t("card.menu_download")))
-        entries.append(("browser", t("card.menu_browser")))
-        if self.state == states.DOWNLOADED:
-            entries.append(("folder", t("card.menu_folder")))
-        entries.append(("remove", t("card.menu_remove")))
-        for key, label in entries:
-            action = menu.addAction(label)
-            action.triggered.connect(lambda _=False, k=key: self._emit_action(k))
-        return menu
+    # -- seleção ------------------------------------------------------------------
+    def set_selectable(self, selectable):
+        """No modo de seleção, clicar marca o card em vez de abri-lo."""
+        self._selectable = selectable
+        self.check.setVisible(selectable)
+        if not selectable:
+            self.check.setChecked(False)
 
-    def _emit_action(self, key):
-        if key == "open":
-            self.open_requested.emit(self.video.id)
-        else:
-            self.action_requested.emit(self.video.id, key)
+    @property
+    def selected(self):
+        return self.check.isChecked()
 
-    def action_keys(self):
-        return [a.text() for a in self.menu_button.menu().actions()]
+    def set_selected(self, selected):
+        self.check.setChecked(selected)
 
     # -- interação ----------------------------------------------------------------
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
-            self.open_requested.emit(self.video.id)
+            if self._selectable:
+                self.check.toggle()
+            else:
+                self.open_requested.emit(self.video.id)
         super().mouseReleaseEvent(event)
 
     def contextMenuEvent(self, event):
@@ -201,6 +245,9 @@ class VideoCard(QFrame):
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
-            self.open_requested.emit(self.video.id)
+            if self._selectable:
+                self.check.toggle()
+            else:
+                self.open_requested.emit(self.video.id)
             return
         super().keyPressEvent(event)

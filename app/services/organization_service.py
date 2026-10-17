@@ -37,6 +37,8 @@ class OrganizationService:
 
     # -- consulta -------------------------------------------------------------------
     def load_data(self):
+        if not self._library.ready:
+            return LibraryData(videos=[])
         store = self.store
         return LibraryData(
             videos=store.list_videos(),
@@ -79,12 +81,16 @@ class OrganizationService:
         self._library.notify()
 
     def category_counts(self):
+        if not self._library.ready:
+            return {}
         counts = {}
         for _video_id, category_id in self.store.list_category_links():
             counts[category_id] = counts.get(category_id, 0) + 1
         return counts
 
     def video_category_ids(self, video_id):
+        if not self._library.ready:
+            return []
         return self.store.get_video_category_ids(video_id)
 
     def assign_categories(self, video_ids, add=(), remove=()):
@@ -126,15 +132,21 @@ class OrganizationService:
         self._library.notify()
 
     def playlist_counts(self):
+        if not self._library.ready:
+            return {}
         counts = {}
         for playlist_id, _video_id, _pos in self.store.list_playlist_links():
             counts[playlist_id] = counts.get(playlist_id, 0) + 1
         return counts
 
     def playlist_video_ids(self, playlist_id):
+        if not self._library.ready:
+            return []
         return self.store.get_playlist_items(playlist_id)
 
     def playlist_videos(self, playlist_id):
+        if not self._library.ready:
+            return []
         videos = {v.id: v for v in self.store.list_videos()}
         return [videos[i] for i in self.store.get_playlist_items(playlist_id) if i in videos]
 

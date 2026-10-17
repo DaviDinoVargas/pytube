@@ -120,3 +120,23 @@ class SettingsService:
     @player_volume.setter
     def player_volume(self, value):
         self._s.setValue("player/volume", int(value))
+
+    @property
+    def library_sort(self):
+        from app.domain.query import SORTS
+
+        value = str(self._s.value("library/sort", "newest"))
+        return value if value in SORTS else "newest"
+
+    @library_sort.setter
+    def library_sort(self, value):
+        self._s.setValue("library/sort", value)
+
+    @property
+    def library_view(self):
+        value = str(self._s.value("library/view", "grid"))
+        return value if value in ("grid", "list") else "grid"
+
+    @library_view.setter
+    def library_view(self, value):
+        self._s.setValue("library/view", value)

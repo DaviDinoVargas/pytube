@@ -96,6 +96,20 @@ QFrame#videoCard[state="missing"], QFrame#videoCard[state="invalid"] {{ border: 
 QFrame#videoCard[state="failed"] {{ border: 2px solid {t['error']}; }}
 QFrame#videoCard QLabel {{ background: transparent; }}
 QFrame#videoCard QWidget {{ background: transparent; }}
+QFrame#videoRow {{ background: {t['surface']}; border: 2px solid {t['border']}; border-radius: {r['md']}px; }}
+QFrame#videoRow:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#videoRow:focus {{ border-color: {t['text_primary']}; }}
+QFrame#videoRow[state="downloaded"] {{ border-color: {t['accent']}; background: {t['accent_soft']}; }}
+QFrame#videoRow[state="missing"], QFrame#videoRow[state="invalid"] {{ border-color: {t['warning']}; }}
+QFrame#videoRow[state="failed"] {{ border-color: {t['error']}; }}
+QFrame#videoRow QLabel, QFrame#videoRow QWidget {{ background: transparent; }}
+QLabel#rowState {{ font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 9px; background: {t['surface_elevated']}; }}
+QLabel#rowState[state="downloaded"] {{ background: {t['accent']}; color: {t['text_on_accent']}; }}
+QLabel#rowState[state="missing"], QLabel#rowState[state="invalid"] {{ background: {t['warning']}; color: #1B1B1B; }}
+QLabel#rowState[state="failed"] {{ background: {t['error']}; color: #1B1B1B; }}
+QLabel#categoryChip {{ font-size: 11px; color: {t['text_secondary']}; border: 1px solid {t['border']}; border-radius: 9px; padding: 0 7px; }}
+QCheckBox#cardCheck::indicator {{ width: 18px; height: 18px; border-radius: 5px; border: 2px solid #FFFFFF; background: rgba(0, 0, 0, 120); }}
+QCheckBox#cardCheck::indicator:checked {{ background: {t['accent']}; border-color: {t['accent']}; }}
 QLabel#cardTitle {{ font-weight: 600; font-size: 14px; }}
 QLabel#cardMeta {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#badge {{
@@ -142,6 +156,27 @@ QMenu {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; b
 QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
 QMenu::item:selected {{ background: {t['accent_soft']}; }}
 QMenu::item:disabled {{ color: {t['text_secondary']}; }}
+
+QFrame#filterPanel {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; border-radius: {r['md']}px; }}
+QFrame#filterPanel QLabel, QFrame#filterPanel QCheckBox {{ background: transparent; }}
+QToolButton#chip {{
+    background: {t['accent_soft']}; color: {t['text_primary']}; border: 1px solid {t['accent']};
+    border-radius: 13px; padding: 4px 12px; font-size: 12px; font-weight: 600;
+}}
+QToolButton#chip:hover {{ background: {t['surface_hover']}; }}
+QToolButton#chip:focus {{ border: 2px solid {t['text_primary']}; }}
+QToolButton#toolbarToggle {{
+    background: transparent; border: 1px solid {t['border']}; border-radius: {r['sm']}px; padding: 5px 8px;
+}}
+QToolButton#toolbarToggle:checked {{ background: {t['accent_soft']}; border-color: {t['accent']}; }}
+QToolButton#toolbarToggle:hover {{ background: {t['surface_hover']}; }}
+QFrame#bulkBar {{ background: {t['accent_soft']}; border: 1px solid {t['accent']}; border-radius: {r['md']}px; }}
+QFrame#bulkBar QLabel {{ background: transparent; font-weight: 600; }}
+
+QFrame#collectionCard {{ background: {t['surface']}; border: 2px solid {t['border']}; border-radius: {r['md']}px; }}
+QFrame#collectionCard:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#collectionCard:focus {{ border-color: {t['text_primary']}; }}
+QFrame#collectionCard QLabel, QFrame#collectionCard QWidget {{ background: transparent; }}
 
 QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
 QLabel#watchTitle {{ font-size: 21px; font-weight: 700; }}
