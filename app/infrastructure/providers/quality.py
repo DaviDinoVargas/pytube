@@ -102,3 +102,14 @@ def needs_recode(selection):
         return not v_ok
     a_ok = _starts(selection.audio.acodec, _MP4_AUDIO) or not selection.audio.acodec and selection.audio.ext in ("mp4", "m4a")
     return not (v_ok and a_ok)
+
+
+def recode_plan(selection):
+    """(copiar_video, copiar_audio): copia o que já é compatível com MP4 e recodifica só o resto."""
+    video = selection.video
+    copy_video = _starts(video.vcodec, _MP4_VIDEO) or (not video.vcodec and video.ext == "mp4")
+    audio = selection.audio
+    if audio is None:
+        return copy_video, True
+    copy_audio = _starts(audio.acodec, _MP4_AUDIO) or (not audio.acodec and audio.ext in ("mp4", "m4a"))
+    return copy_video, copy_audio
