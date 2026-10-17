@@ -13,6 +13,7 @@ VOLUME_DOWN = "volume_down"
 MUTE = "mute"
 FULLSCREEN = "fullscreen"
 EXIT_FULLSCREEN = "exit_fullscreen"
+MINI = "mini"
 
 KEYMAP = {
     Qt.Key_Space: PLAY_PAUSE,
@@ -24,6 +25,7 @@ KEYMAP = {
     Qt.Key_M: MUTE,
     Qt.Key_F: FULLSCREEN,
     Qt.Key_Escape: EXIT_FULLSCREEN,
+    Qt.Key_I: MINI,
 }
 
 

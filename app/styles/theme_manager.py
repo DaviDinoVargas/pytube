@@ -135,6 +135,8 @@ QStackedWidget#playerStack {{ background: #000000; border-top-left-radius: 14px;
 QFrame#playerMessage {{ background: #000000; }}
 QLabel#playerMessageText {{ color: #FFFFFF; font-size: 14px; background: transparent; }}
 QFrame#playerControls {{ background: {t['surface_elevated']}; border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }}
+QFrame#miniBar {{ background: {t['surface_elevated']}; border-top-left-radius: 14px; border-top-right-radius: 14px; }}
+QLabel#miniTitle {{ color: {t['text_primary']}; font-weight: 600; background: transparent; }}
 QFrame#playerNotice {{ background: {t['accent_soft']}; }}
 QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#sourceChip {{

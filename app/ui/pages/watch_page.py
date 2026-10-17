@@ -251,7 +251,7 @@ class WatchPage(Page):
 
     def hideEvent(self, event):
         super().hideEvent(event)
-        if not event.spontaneous():  # sair da página para o vídeo; minimizar a janela não conta
+        if not event.spontaneous() and not self.player.is_mini:  # no mini player o vídeo continua; minimizar a janela não conta
             self.player.stop()
             self._player_source = None
 

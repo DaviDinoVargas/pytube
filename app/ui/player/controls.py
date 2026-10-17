@@ -32,6 +32,7 @@ class PlayerControls(QFrame):
     rate_selected = Signal(float)
     quality_selected = Signal(object)  # altura (int) ou None para automática
     fullscreen_toggled = Signal()
+    mini_toggled = Signal()
 
     def __init__(self, translator, tokens):
         super().__init__()
@@ -44,6 +45,7 @@ class PlayerControls(QFrame):
         self._volume = 80
         self._rate = 1.0
         self._fullscreen = False
+        self._mini = False
         self._seeking = False
         self._current_height = 0
         self._available = []
@@ -88,9 +90,11 @@ class PlayerControls(QFrame):
         self.source_chip = QLabel()
         self.source_chip.setObjectName("sourceChip")
         self.fullscreen_button = self._button("maximize", self.fullscreen_toggled.emit)
+        self.mini_button = self._button("mini", self.mini_toggled.emit)
         row.addWidget(self.speed_button)
         row.addWidget(self.quality_button)
         row.addWidget(self.source_chip)
+        row.addWidget(self.mini_button)
         row.addWidget(self.fullscreen_button)
         outer.addLayout(row)
         self.refresh()
@@ -150,6 +154,13 @@ class PlayerControls(QFrame):
         self._fullscreen = fullscreen
         self.refresh()
 
+    def set_mini(self, mini):
+        """No mini player só ficam o essencial: tocar, tempo, mudo e voltar à página do vídeo."""
+        self._mini = mini
+        for widget in (self.volume_slider, self.speed_button, self.quality_button, self.source_chip, self.fullscreen_button):
+            widget.setVisible(not mini)
+        self.refresh()
+
     def reset(self):
         self._duration, self._playing, self._current_height, self._available = 0.0, False, 0, []
         self.seek_slider.setValue(0)
@@ -188,6 +199,8 @@ class PlayerControls(QFrame):
         self._label(self.mute_button, t("player.unmute" if silent else "player.mute"))
         self.fullscreen_button.setIcon(icon("minimize" if self._fullscreen else "maximize", color))
         self._label(self.fullscreen_button, t("player.exit_fullscreen" if self._fullscreen else "player.fullscreen"))
+        self.mini_button.setIcon(icon("mini", color))
+        self._label(self.mini_button, t("player.mini_expand" if self._mini else "player.mini"))
         self._fill_speed_menu()
         self._fill_quality_menu()
 

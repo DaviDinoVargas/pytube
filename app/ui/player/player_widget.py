@@ -1,15 +1,21 @@
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtWidgets import (
+    QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QStackedWidget, QToolButton, QVBoxLayout, QWidget,
+)
 
 from app.domain import playback
 from app.domain.states import format_duration
 from app.ui.errors import describe_error
 from app.ui.player import shortcuts
 from app.ui.player.controls import PlayerControls
+from app.styles.icons import icon
 from app.ui.player.local_player import LocalPlayer
 from app.ui.workers import run_async
 
 MAX_WIDTH = 1000
+MINI_WIDTH = 420
+MINI_MARGIN = 24
 SAVE_INTERVAL_MS = 5000
 NOTICE_MS = 10000
 
@@ -62,6 +68,45 @@ class PlayerMessage(QFrame):
             self.buttons.append(button)
 
 
+class MiniBar(QFrame):
+    """Barra do mini player: título, voltar à página do vídeo e fechar. Arrastar a barra move a janela."""
+
+    def __init__(self, tokens):
+        super().__init__()
+        self.setObjectName("miniBar")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(12, 4, 6, 4)
+        row.setSpacing(4)
+        self.title = QLabel()
+        self.title.setObjectName("miniTitle")
+        self.expand_button = self._button()
+        self.close_button = self._button()
+        row.addWidget(self.title, 1)
+        row.addWidget(self.expand_button)
+        row.addWidget(self.close_button)
+        self.set_tokens(tokens)
+
+    @staticmethod
+    def _button():
+        button = QToolButton()
+        button.setObjectName("playerButton")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setFocusPolicy(Qt.TabFocus)
+        return button
+
+    def set_tokens(self, tokens):
+        self.expand_button.setIcon(icon("maximize", tokens["text_primary"], 16))
+        self.close_button.setIcon(icon("close", tokens["text_primary"], 16))
+
+    def mousePressEvent(self, event):
+        handle = self.window().windowHandle()
+        if event.button() == Qt.LeftButton and handle is not None:
+            handle.startSystemMove()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 class PlayerWidget(QFrame):
     """Player da tela do vídeo: arquivo local primeiro, YouTube incorporado quando não há arquivo,
     stream direto como alternativa. Salva e retoma a posição."""
@@ -72,6 +117,8 @@ class PlayerWidget(QFrame):
     fullscreen_changed = Signal(bool)
     folder_requested = Signal()
     playback_ended = Signal()  # o vídeo terminou (usado na reprodução sequencial de playlists)
+    mini_changed = Signal(bool)
+    expand_requested = Signal()  # 'voltar à página do vídeo' no mini player
 
     def __init__(self, translator, tokens, library, progress, settings, local_factory=LocalPlayer, online_factory=create_online_player):
         super().__init__()
@@ -93,6 +140,7 @@ class PlayerWidget(QFrame):
         self._dur = 0.0
         self._muted = False
         self._fullscreen = False
+        self._mini = False
         self._host_layout = None
         self._host_index = 0
         self._max_height = None
@@ -102,6 +150,11 @@ class PlayerWidget(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
+        self.mini_bar = MiniBar(tokens)
+        self.mini_bar.expand_button.clicked.connect(self.expand_mini)
+        self.mini_bar.close_button.clicked.connect(self.close_mini)
+        self.mini_bar.hide()
+        column.addWidget(self.mini_bar)
         self.stack = QStackedWidget()
         self.stack.setObjectName("playerStack")
         self.blank = QWidget()
@@ -135,6 +188,7 @@ class PlayerWidget(QFrame):
         c.rate_selected.connect(lambda rate: self._backend and self._backend.set_rate(rate))
         c.quality_selected.connect(lambda height: self._backend and self._backend.set_quality(height))
         c.fullscreen_toggled.connect(self.toggle_fullscreen)
+        c.mini_toggled.connect(self.toggle_mini)
 
         self._save_timer = QTimer(self)
         self._save_timer.setInterval(SAVE_INTERVAL_MS)
@@ -166,6 +220,7 @@ class PlayerWidget(QFrame):
         self.stop()
         self._request += 1
         self._source_id, self._video = source_id, video
+        self._update_mini_title()
         self._pos = self._dur = 0.0
         self.controls.reset()
         start = self._resume_start()
@@ -178,6 +233,7 @@ class PlayerWidget(QFrame):
     def attach_video(self, video):
         """Associa (ou desassocia) o registro da biblioteca sem reiniciar a reprodução, para salvar o progresso."""
         self._video = video
+        self._update_mini_title()
 
     def _resume_start(self):
         self.notice.hide()
@@ -419,6 +475,8 @@ class PlayerWidget(QFrame):
         self.stop()
         if self._fullscreen:
             self.exit_fullscreen()
+        if self._mini:
+            self.exit_mini()
         if self._online is not None:
             self._online.shutdown()
             self._online = None
@@ -439,6 +497,8 @@ class PlayerWidget(QFrame):
             self.toggle_fullscreen()
         elif action == shortcuts.EXIT_FULLSCREEN:
             self.exit_fullscreen()
+        elif action == shortcuts.MINI:
+            self.toggle_mini()
 
     def keyPressEvent(self, event):
         action = shortcuts.action_for(event.key(), event.modifiers())
@@ -461,6 +521,9 @@ class PlayerWidget(QFrame):
 
     def enter_fullscreen(self):
         parent = self.parentWidget()
+        if self._mini:
+            self.expand_mini()
+            parent = self.parentWidget()
         if self._fullscreen or parent is None or parent.layout() is None:
             return
         self._host_layout = parent.layout()
@@ -491,6 +554,79 @@ class PlayerWidget(QFrame):
         self._apply_geometry()
         self.fullscreen_changed.emit(self._fullscreen)
 
+    # ------------------------------------------------------------------------------------
+    # mini player: o mesmo player numa janelinha flutuante, sempre por cima das outras
+    # ------------------------------------------------------------------------------------
+    @property
+    def is_mini(self):
+        return self._mini
+
+    def toggle_mini(self):
+        self.expand_mini() if self._mini else self.enter_mini()
+
+    def enter_mini(self):
+        parent = self.parentWidget()
+        if self._mini or self._fullscreen or self._backend is None or parent is None or parent.layout() is None:
+            return
+        self._host_layout = parent.layout()
+        self._host_index = self._host_layout.indexOf(self)
+        self._host_layout.removeWidget(self)
+        self._mini = True
+        self.notice.hide()
+        self.setParent(None)
+        self.setWindowFlags(Qt.Window | Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setMinimumWidth(MINI_WIDTH)
+        self.setMaximumWidth(MINI_WIDTH)
+        self.mini_bar.show()
+        self.controls.set_mini(True)
+        self._update_mini_title()
+        self._apply_geometry()
+        self.adjustSize()
+        self._place_mini()
+        self.show()
+        self.setFocus()
+        self.mini_changed.emit(True)
+
+    def _place_mini(self):
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        self.move(area.right() - self.width() - MINI_MARGIN, area.bottom() - self.height() - MINI_MARGIN)
+
+    def exit_mini(self):
+        """Devolve o player à página do vídeo, sem mexer na reprodução."""
+        if not self._mini:
+            return
+        self._mini = False
+        self.hide()
+        self.setWindowFlags(Qt.Widget)
+        self.setMinimumWidth(0)
+        self.setMaximumWidth(MAX_WIDTH)
+        self.mini_bar.hide()
+        self.controls.set_mini(False)
+        if self._host_layout is not None:
+            self._host_layout.insertWidget(self._host_index, self)
+        self.show()
+        self._apply_geometry()
+        self.mini_changed.emit(False)
+
+    def expand_mini(self):
+        if self._mini:
+            self.exit_mini()
+            self.expand_requested.emit()
+
+    def close_mini(self):
+        """'X' do mini player: volta ao lugar de origem e para o vídeo (gravando a posição)."""
+        if self._mini:
+            self.exit_mini()
+            self.stop()
+
+    def _update_mini_title(self):
+        title = self._video.title if self._video is not None else ""
+        self.mini_bar.title.setText(title)
+        self.mini_bar.title.setToolTip(title)
+
     def set_max_height(self, height):
         self._max_height = max(220, int(height))
         controls_h = self.controls.sizeHint().height()
@@ -498,6 +634,9 @@ class PlayerWidget(QFrame):
         self._apply_geometry()
 
     def _apply_geometry(self):
+        if self._mini:
+            self.stack.setFixedHeight(int(self.width() * 9 / 16))
+            return
         if self._fullscreen:
             self.stack.setMinimumHeight(0)
             self.stack.setMaximumHeight(16777215)
@@ -518,7 +657,12 @@ class PlayerWidget(QFrame):
     def set_tokens(self, tokens):
         self._tokens = tokens
         self.controls.set_tokens(tokens)
+        self.mini_bar.set_tokens(tokens)
 
     def retranslate(self):
         self.controls.retranslate()
+        self.mini_bar.expand_button.setToolTip(self._tr.t("player.mini_expand"))
+        self.mini_bar.expand_button.setAccessibleName(self._tr.t("player.mini_expand"))
+        self.mini_bar.close_button.setToolTip(self._tr.t("player.mini_close"))
+        self.mini_bar.close_button.setAccessibleName(self._tr.t("player.mini_close"))
         self.restart_button.setText(self._tr.t("player.restart"))
