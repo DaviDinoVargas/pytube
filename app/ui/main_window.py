@@ -18,6 +18,7 @@ from app.ui.dialogs.backup_dialog import BackupDialog
 from app.ui.dialogs.name_dialog import NameDialog
 from app.ui.dialogs.space_dialog import SpaceDialog
 from app.ui.errors import describe_error
+from app.ui.layout_controller import LayoutController
 from app.ui.widgets.settings_cards import DownloadsCard, MaintenanceCard, PlaybackCard, ProvidersCard
 from app.ui.organize_menus import OrganizeMenus
 from app.ui.player import shortcuts
@@ -106,6 +107,7 @@ class MainWindow(QMainWindow):
         self.settings_page = SettingsPage(translator, settings.language, settings.theme, storage, settings)
         self.settings_page.language_selected.connect(self._on_language)
         self.settings_page.theme_selected.connect(self._on_theme)
+        self.settings_page.layout_selected.connect(self._on_layout)
         self._build_settings_sections()
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
@@ -127,6 +129,7 @@ class MainWindow(QMainWindow):
                 page.video_opened.connect(self.open_saved_video)
             if hasattr(page, "video_action"):
                 page.video_action.connect(self._on_video_action)
+        self.pages["home"].playlist_opened.connect(self.open_playlist)
         self.pages["home"].category_all_requested.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
         self.pages["history"].message.connect(self.top_bar.show_message)
         self.pages["categories"].message.connect(self.top_bar.show_message)
@@ -171,6 +174,7 @@ class MainWindow(QMainWindow):
         self.top_bar.video_requested.connect(self._on_video_requested)
         self._previous_page = DEFAULT_PAGE
         self._back_page = DEFAULT_PAGE
+        self.layouts = LayoutController(self)
 
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.top_bar.focus_search)
         QShortcut(QKeySequence("Ctrl+L"), self, activated=self.top_bar.focus_url)
@@ -179,6 +183,7 @@ class MainWindow(QMainWindow):
         theme.theme_changed.connect(self._apply_tokens)
         self._apply_tokens()
         self.retranslate()
+        self.layouts.apply(settings.layout)
         last = settings.last_page if settings.restore_last_page else DEFAULT_PAGE
         self.show_page(last if last in self.pages else DEFAULT_PAGE)
 
@@ -196,6 +201,7 @@ class MainWindow(QMainWindow):
         if key not in ("settings", "watch", "playlist"):
             self._previous_page = key
         self.stack.setCurrentWidget(self.pages[key])
+        self.layouts.on_page_changed(key)
         self.settings_button.setChecked(key == "settings")
         self.sidebar.select("playlists" if key == "playlist" else key)
         if key not in ("watch", "playlist"):
@@ -570,10 +576,25 @@ class MainWindow(QMainWindow):
         self._tr.set_language(code)
         self.retranslate()
 
+    @property
+    def settings(self):
+        return self._settings
+
+    def _on_layout(self, key):
+        self._settings.layout = key
+        self.layouts.apply(key, go_landing=True)
+
+    def show_landing(self, key):
+        """Página inicial do layout. 'watch' sem vídeo aberto mostra a tela do vídeo vazia (estação e compacto)."""
+        if key == "watch":
+            self.watch_page.show_empty()
+        self.show_page(key)
+
     def _on_theme(self, name):
         self._settings.theme = name
         self.settings_page.set_theme(name)
         self._theme.apply(name)
+
 
     def _apply_tokens(self):
         tokens = self._theme.tokens

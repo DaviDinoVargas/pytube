@@ -16,6 +16,7 @@ class TopBar(QFrame):
         self.setObjectName("topbar")
         self._tr = translator
         self._tokens = tokens
+        self._compact = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 12, 20, 8)
@@ -54,6 +55,13 @@ class TopBar(QFrame):
             icon("search", tokens["text_secondary"], 18), QLineEdit.LeadingPosition
         )
         self.retranslate()
+
+    def set_compact(self, compact):
+        """Layout compacto: só o campo do link e o botão; a busca da biblioteca sai e as margens encolhem."""
+        self._compact = compact
+        self.search_input.setVisible(not compact)
+        self.url_input.setMinimumWidth(120 if compact else 280)
+        self.layout().setContentsMargins(*((10, 8, 10, 6) if compact else (20, 12, 20, 8)))
 
     def focus_url(self):
         self.url_input.setFocus()

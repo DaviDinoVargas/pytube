@@ -44,6 +44,9 @@ class Page(QWidget):
     def set_tokens(self, tokens):
         """Páginas com elementos desenhados à mão (ícones) sobrescrevem este método."""
 
+    def set_layout(self, profile):
+        """Chamado quando o layout muda. Páginas que se organizam de outro jeito em algum layout sobrescrevem."""
+
 
 class EmptyState(QWidget):
     def __init__(self, translator, key):

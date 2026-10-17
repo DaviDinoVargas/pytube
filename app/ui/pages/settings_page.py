@@ -14,9 +14,12 @@ from PySide6.QtWidgets import (
 
 from app.i18n import LANGUAGES
 from app.services.storage_service import STATUS_READY, STATUS_ROOT_MISSING, STATUS_UNCONFIGURED, format_bytes
-from app.styles.tokens import THEME_CHOICES
+from app.styles.theme_manager import resolve_theme
+from app.styles.tokens import THEME_CHOICES, THEMES
 from app.ui.pages.base import Page
+from app.domain.layouts import LAYOUT_CHOICES
 from app.ui.widgets.flow_layout import FlowLayout
+from app.ui.widgets.layout_swatch import LayoutSwatch
 from app.ui.widgets.theme_swatch import ThemeSwatch
 
 
@@ -24,6 +27,7 @@ class SettingsPage(Page):
     key = "settings"
     language_selected = Signal(str)
     theme_selected = Signal(str)
+    layout_selected = Signal(str)
     change_storage_requested = Signal()
     open_storage_requested = Signal()
 
@@ -85,11 +89,34 @@ class SettingsPage(Page):
         appearance.layout().addWidget(self.theme_hint)
         appearance.layout().addWidget(swatches)
 
+        self.layout_title = QLabel()
+        self.layout_title.setObjectName("groupTitle")
+        self.layout_hint = QLabel()
+        self.layout_hint.setObjectName("pageSubtitle")
+        self.layout_hint.setWordWrap(True)
+        self.layout_buttons = {}
+        self._layout_group = QButtonGroup(self)
+        self._layout_group.setExclusive(True)
+        layout_box = QWidget()
+        layout_flow = FlowLayout(layout_box, hspacing=14, vspacing=14)
+        initial_tokens = THEMES[resolve_theme(theme)]
+        for key in LAYOUT_CHOICES:
+            swatch = LayoutSwatch(key, key, initial_tokens)
+            swatch.clicked.connect(lambda _=False, k=key: self.layout_selected.emit(k))
+            self._layout_group.addButton(swatch)
+            self.layout_buttons[key] = swatch
+            layout_flow.addWidget(swatch)
+        layouts_card = self._card()
+        layouts_card.layout().addWidget(self.layout_title)
+        layouts_card.layout().addWidget(self.layout_hint)
+        layouts_card.layout().addWidget(layout_box)
+
         storage_card = self._build_storage_card()
 
         self.body.addWidget(general)
         self.body.addWidget(storage_card)
         self.body.addWidget(appearance)
+        self.body.addWidget(layouts_card)
         self.body.addStretch(1)
         self.retranslate()
 
@@ -178,9 +205,15 @@ class SettingsPage(Page):
         if name in self.theme_buttons:
             self.theme_buttons[name].setChecked(True)
 
+    def set_layout(self, key):
+        if key in self.layout_buttons:
+            self.layout_buttons[key].setChecked(True)
+
     def set_tokens(self, tokens):
         for swatch in self.theme_buttons.values():
-            swatch.set_ring_color(tokens["accent"])
+            swatch.set_ring_color(tokens["accent_fg"])
+        for swatch in self.layout_buttons.values():  # a prévia dos layouts usa as cores do tema escolhido
+            swatch.set_tokens(tokens)
 
     def retranslate(self):
         super().retranslate()
@@ -194,6 +227,10 @@ class SettingsPage(Page):
         self.theme_hint.setText(t("settings.theme_hint"))
         for name, swatch in self.theme_buttons.items():
             swatch.set_label(t(f"theme.{name}"))
+        self.layout_title.setText(t("settings.layout").upper())
+        self.layout_hint.setText(t("settings.layout_hint"))
+        for key, swatch in self.layout_buttons.items():
+            swatch.set_label(t(f"layout.{key}"), t(f"layout.{key}_desc"))
         self.restore_check.setText(t("settings.restore_last_page"))
         for card in self._sections:
             card.retranslate()

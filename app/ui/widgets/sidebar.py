@@ -17,7 +17,9 @@ class Sidebar(QFrame):
         self.setObjectName("sidebar")
         self._tr = translator
         self._tokens = tokens
-        self._collapsed = collapsed
+        self._collapsed = collapsed  # preferência do usuário (vale no modo 'full')
+        self._mode = "full"  # 'full' | 'icons' | 'hidden', definido pelo layout
+        self._peek = False  # no modo 'icons', o botão do topo expande a sidebar até o usuário recolher de novo
         self._buttons = {}
         self._badges = {}
 
@@ -31,7 +33,7 @@ class Sidebar(QFrame):
         self._toggle.setObjectName("iconButton")
         self._toggle.setIconSize(QSize(20, 20))
         self._toggle.setCursor(Qt.PointingHandCursor)
-        self._toggle.clicked.connect(lambda: self.set_collapsed(not self._collapsed))
+        self._toggle.clicked.connect(self._on_toggle)
         self._brand = QLabel("DinoTube")
         self._brand.setObjectName("brand")
         head.addWidget(self._toggle)
@@ -65,13 +67,35 @@ class Sidebar(QFrame):
             btn.setChecked(False)
         self._group.setExclusive(True)
 
+    def _on_toggle(self):
+        if self._mode == "icons":
+            self._peek = not self._peek
+            self.refresh()
+        else:
+            self.set_collapsed(not self._collapsed)
+
     def set_collapsed(self, collapsed):
         self._collapsed = collapsed
         self.refresh()
         self.collapsed_changed.emit(collapsed)
 
+    def set_mode(self, mode):
+        """Modo imposto pelo layout: 'full' (como o usuário deixou), 'icons' (só ícones) ou 'hidden'."""
+        if mode != self._mode:
+            self._mode = mode
+            self._peek = False
+        self.setVisible(mode != "hidden")
+        self.refresh()
+
+    @property
+    def mode(self):
+        return self._mode
+
     @property
     def collapsed(self):
+        """Como a sidebar aparece agora (recolhida em ícones ou expandida)."""
+        if self._mode == "icons":
+            return not self._peek
         return self._collapsed
 
     def set_badge(self, key, count):
@@ -90,10 +114,11 @@ class Sidebar(QFrame):
     def refresh(self):
         """Reaplica textos, ícones e largura conforme idioma, tema e estado de recolhimento."""
         width = self._tokens.get("sidebar_width", EXPANDED_WIDTH)  # fontes monoespaçadas pedem uma sidebar mais larga
-        self.setFixedWidth(COLLAPSED_WIDTH if self._collapsed else width)
-        self._brand.setVisible(not self._collapsed)
+        collapsed = self.collapsed
+        self.setFixedWidth(COLLAPSED_WIDTH if collapsed else width)
+        self._brand.setVisible(not collapsed)
         self._toggle.setIcon(icon("panel", self._tokens["text_secondary"]))
-        self._toggle.setToolTip(self._tr.t("nav.expand" if self._collapsed else "nav.collapse"))
+        self._toggle.setToolTip(self._tr.t("nav.expand" if collapsed else "nav.collapse"))
         self._toggle.setAccessibleName(self._toggle.toolTip())
         for key, btn in self._buttons.items():
             label = self._tr.t(f"nav.{key}")
@@ -101,7 +126,7 @@ class Sidebar(QFrame):
             shown = f"{label} · {count}" if count else label
             btn.setToolTip(shown)
             btn.setAccessibleName(shown)
-            if self._collapsed:
+            if collapsed:
                 btn.setText("")
                 btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
                 btn.setFixedWidth(COLLAPSED_WIDTH - 24)

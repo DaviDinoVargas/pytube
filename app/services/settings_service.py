@@ -1,6 +1,7 @@
 from PySide6.QtCore import QSettings
 
 from app import APP_NAME
+from app.domain.layouts import DEFAULT_LAYOUT, LAYOUT_CHOICES
 from app.i18n import DEFAULT_LANGUAGE, LANGUAGES
 from app.styles.tokens import DEFAULT_THEME, THEME_CHOICES
 
@@ -33,6 +34,24 @@ class SettingsService:
     @theme.setter
     def theme(self, value):
         self._s.setValue("general/theme", value)
+
+    @property
+    def layout(self):
+        value = self._s.value("general/layout", DEFAULT_LAYOUT)
+        return value if value in LAYOUT_CHOICES else DEFAULT_LAYOUT
+
+    @layout.setter
+    def layout(self, value):
+        self._s.setValue("general/layout", value)
+
+    @property
+    def compact_on_top(self):
+        """No layout compacto, manter a janela por cima das outras."""
+        return str(self._s.value("ui/compact_on_top", "true")).lower() == "true"
+
+    @compact_on_top.setter
+    def compact_on_top(self, value):
+        self._s.setValue("ui/compact_on_top", bool(value))
 
     @property
     def sidebar_collapsed(self):
