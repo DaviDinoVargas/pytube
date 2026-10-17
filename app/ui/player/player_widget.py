@@ -211,6 +211,11 @@ class PlayerWidget(QFrame):
     def video(self):
         return self._video
 
+    @property
+    def position(self):
+        """Posição atual em segundos."""
+        return self._pos
+
     def is_idle(self):
         """True quando não há nada carregado nem mensagem na tela (ex.: logo após `stop()`)."""
         return self._backend is None and self.stack.currentWidget() is self.blank

@@ -11,6 +11,10 @@ class OrganizeMenus:
         self._new_playlist = new_playlist
         self._on_change = on_change or (lambda kind: None)
 
+    @property
+    def org(self):
+        return self._org
+
     def categories_menu(self, video_ids, parent=None):
         t = self._tr.t
         menu = QMenu(t("card.menu_categories"), parent)

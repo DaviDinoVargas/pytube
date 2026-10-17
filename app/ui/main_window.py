@@ -113,9 +113,11 @@ class MainWindow(QMainWindow):
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
         self.watch_page = WatchPage(
-            translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options, self.organize
+            translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options, self.organize,
+            org=self.org,
         )
         self.watch_page.playback_ended.connect(self._on_playback_ended)
+        self.watch_page.video_opened.connect(self.open_saved_video)
         self.watch_page.player.mini_changed.connect(self._on_mini_changed)
         self.watch_page.player.expand_requested.connect(self._enter_watch)
         self.playlist_page = PlaylistDetailPage(translator, self.org, library, tokens)

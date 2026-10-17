@@ -177,6 +177,20 @@ QFrame#hero QLabel {{ background: transparent; color: #FFFFFF; }}
 QLabel#heroKicker {{ font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #E0E0E0; }}
 QLabel#heroTitle {{ font-family: {title}; font-size: {size(28)}px; font-weight: 800; }}
 QLabel#heroMeta {{ font-size: 13px; color: #E0E0E0; }}
+QFrame#detailsPanel, QFrame#libraryList {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#detailsPanel QLabel, QFrame#libraryList QLabel {{ background: transparent; }}
+QPlainTextEdit#notesEdit {{
+    background: {t['input_bg']}; {inset} border-radius: {r['sm']}px; padding: {pad(8, 10, bw)};
+    selection-background-color: {t['accent']}; selection-color: {t['text_on_accent']};
+}}
+QPlainTextEdit#notesEdit:focus {{ border: {fw}px solid {t['focus']}; padding: {pad(8, 10, fw)}; }}
+QListWidget#libraryListView {{ background: transparent; border: none; outline: none; }}
+QListWidget#libraryListView::item {{ border-radius: {r['sm']}px; }}
+QListWidget#libraryListView::item:hover {{ background: {t['surface_hover']}; }}
+QListWidget#libraryListView::item:selected {{ background: {t['accent_soft']}; }}
+QFrame#relatedItem:focus {{ border: 2px solid {t['focus']}; border-radius: {r['sm']}px; }}
+QFrame#relatedItem QLabel {{ background: transparent; }}
+QSplitter::handle {{ background: transparent; }}
 QFrame#playerNotice {{ background: {t['accent_soft']}; }}
 QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#sourceChip {{

@@ -45,6 +45,15 @@ class SettingsService:
         self._s.setValue("general/layout", value)
 
     @property
+    def watch_details(self):
+        """Painel de detalhes aberto na tela do vídeo (layout clássico)."""
+        return str(self._s.value("ui/watch_details", "false")).lower() == "true"
+
+    @watch_details.setter
+    def watch_details(self, value):
+        self._s.setValue("ui/watch_details", bool(value))
+
+    @property
     def compact_on_top(self):
         """No layout compacto, manter a janela por cima das outras."""
         return str(self._s.value("ui/compact_on_top", "true")).lower() == "true"

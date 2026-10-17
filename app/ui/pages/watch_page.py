@@ -11,13 +11,14 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from app.domain import states
+from app.domain import layouts, recommend, states
 from app.domain.errors import DuplicateError, StorageError
 from app.domain.states import format_duration, video_state
 from app.infrastructure.providers import quality
@@ -27,13 +28,17 @@ from app.services.storage_service import format_bytes
 from app.styles.icons import icon
 from app.ui.errors import describe_error
 from app.ui.pages.base import Page
+from app.ui.widgets.flow_layout import FlowLayout
+from app.ui.widgets.details_panel import PANEL_WIDTH, DetailsPanel
 from app.ui.widgets.download_row import status_text
+from app.ui.widgets.library_list import PANE_WIDTH, LibraryList
+from app.ui.widgets.related_strip import RelatedStrip
 from app.ui.player.player_widget import PlayerWidget
 from app.ui.widgets.video_card import format_added
 from app.ui.workers import run_async
 
 _ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
-_LOADING, _ERROR, _CONTENT = 0, 1, 2
+_LOADING, _ERROR, _CONTENT, _EMPTY = 0, 1, 2, 3
 DESCRIPTION_LINES = 4
 
 
@@ -61,10 +66,14 @@ class WatchPage(Page):
     back_requested = Signal()
     message = Signal(str, bool)  # texto, é_erro
     playback_ended = Signal()
+    video_opened = Signal(int)  # vídeo escolhido na lista da biblioteca ou nos relacionados
 
-    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None):
+    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None, org=None):
         super().__init__(translator)
         self._library = library
+        self._org = org
+        self._settings = settings
+        self._profile = layouts.profile_for(layouts.DEFAULT_LAYOUT)
         self._organize = organize
         self._downloads = downloads
         self._consent = consent
@@ -89,7 +98,19 @@ class WatchPage(Page):
         self.back_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.back_button.setIconSize(QSize(18, 18))
         self.back_button.clicked.connect(self.back_requested)
-        self.body.addWidget(self.back_button, 0, Qt.AlignLeft)
+        header = QHBoxLayout()
+        header.addWidget(self.back_button)
+        header.addStretch(1)
+        self.details_toggle = QToolButton()
+        self.details_toggle.setObjectName("toolbarToggle")
+        self.details_toggle.setCheckable(True)
+        self.details_toggle.setChecked(settings.watch_details)
+        self.details_toggle.setCursor(Qt.PointingHandCursor)
+        self.details_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.details_toggle.toggled.connect(self._on_details_toggled)
+        header.addWidget(self.details_toggle)
+        self.header = header
+        self.body.addLayout(header)
 
         self.stack = QStackedWidget()
         self.body.addWidget(self.stack, 1)
@@ -149,8 +170,8 @@ class WatchPage(Page):
         col.addWidget(self.title_label)
         col.addWidget(self.meta_label)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(10)
+        actions_box = QWidget()
+        actions = FlowLayout(actions_box, 10, 8)  # quebra de linha quando o painel central fica estreito
         self.save_button = QPushButton()
         self.save_button.setCursor(Qt.PointingHandCursor)
         self.save_button.clicked.connect(self.toggle_saved)
@@ -164,8 +185,7 @@ class WatchPage(Page):
         actions.addWidget(self.categories_button)
         actions.addWidget(self.playlists_button)
         actions.addWidget(self.browser_button)
-        actions.addStretch(1)
-        col.addLayout(actions)
+        col.addWidget(actions_box)
 
         self.playlist_label = QLabel()
         self.playlist_label.setObjectName("cardMeta")
@@ -182,8 +202,8 @@ class WatchPage(Page):
         panel_lay = QVBoxLayout(panel)
         panel_lay.setContentsMargins(16, 12, 16, 12)
         panel_lay.setSpacing(8)
-        pick = QHBoxLayout()
-        pick.setSpacing(10)
+        pick_box = QWidget()
+        pick = FlowLayout(pick_box, 10, 8)
         self.quality_label = QLabel()
         self.quality_label.setObjectName("fieldLabel")
         self.quality_combo = QComboBox()
@@ -201,8 +221,7 @@ class WatchPage(Page):
         pick.addWidget(self.quality_combo)
         pick.addWidget(self.download_button)
         pick.addWidget(self.quality_retry)
-        pick.addStretch(1)
-        panel_lay.addLayout(pick)
+        panel_lay.addWidget(pick_box)
         progress_row = QHBoxLayout()
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 1000)
@@ -237,22 +256,129 @@ class WatchPage(Page):
         self.description_card = card
         card.setMaximumWidth(1000)
         col.addWidget(card, 0, Qt.AlignLeft)
+        self.related = RelatedStrip(translator, tokens)
+        self.related.video_opened.connect(self.video_opened)
+        col.addWidget(self.related)
         col.addStretch(1)
         self.stack.addWidget(content)
+
+        # nenhum vídeo aberto (Estação de trabalho e Compacto começam assim)
+        empty = QWidget()
+        lay = QVBoxLayout(empty)
+        self.empty_label = QLabel()
+        self.empty_label.setObjectName("emptyBody")
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setWordWrap(True)
+        lay.addStretch(1)
+        lay.addWidget(self.empty_label)
+        lay.addStretch(2)
+        self.stack.addWidget(empty)
+        self._build_shell(translator, tokens, library, org, organize)
 
         downloads.task_changed.connect(self._on_task_changed)
         library.changed.connect(self._on_library_changed)
         self.retranslate()
 
+    # -- painéis laterais e layouts -------------------------------------------------------------
+    def _build_shell(self, translator, tokens, library, org, organize):
+        """Coloca a rolagem do conteúdo entre dois painéis opcionais: lista da biblioteca (esquerda) e detalhes (direita)."""
+        root = self.layout()
+        root.removeWidget(self.scroll)
+        self.shell = QSplitter(Qt.Horizontal)
+        self.shell.setChildrenCollapsible(False)
+        self.shell.setHandleWidth(10)
+        self.library_list = LibraryList(translator, tokens, library, org) if org is not None else None
+        self.details = DetailsPanel(translator, library, organize)
+        self.details.timestamp_requested.connect(lambda: self.details.insert_timestamp(self.player.position))
+        self.details.folder_requested.connect(self._open_local_folder)
+        if self.library_list is not None:
+            self.library_list.video_opened.connect(self.video_opened)
+            self.shell.addWidget(self.library_list)
+        self.shell.addWidget(self.scroll)
+        self.shell.addWidget(self.details)
+        self.shell.setStretchFactor(self.shell.indexOf(self.scroll), 1)
+        root.addWidget(self.shell, 1)
+        self.library_list and self.library_list.hide()
+        self.details.hide()
+
+    def set_layout(self, profile):
+        self._profile = profile
+        self._apply_panes()
+        self.related.set_allowed(profile.related)
+        self._update_related()
+
+    # largura mínima da janela para cada painel caber sem espremer o player
+    LIST_MIN_WIDTH = 1180
+    DETAILS_MIN_WIDTH = 1000
+    PAGE_MARGINS = {
+        layouts.WATCH_STANDARD: (32, 28, 24, 0), layouts.WATCH_WORKSTATION: (14, 12, 14, 0),
+        layouts.WATCH_COMPACT: (10, 8, 10, 0), layouts.WATCH_CINEMA: (0, 0, 0, 0),
+    }
+
+    def _apply_panes(self):
+        profile = self._profile
+        standard = profile.watch == layouts.WATCH_STANDARD
+        self.layout().setContentsMargins(*self.PAGE_MARGINS.get(profile.watch, (32, 28, 24, 0)))
+        self.details_toggle.setVisible(standard and not profile.details_panel)
+        wide = self.width() if self.width() > 100 else 10_000  # antes de a janela ter tamanho, não esconde nada
+        show_details = (profile.details_panel and wide >= self.DETAILS_MIN_WIDTH) or (standard and self.details_toggle.isChecked())
+        show_list = profile.library_list and self.library_list is not None and wide >= self.LIST_MIN_WIDTH
+        self.details.setVisible(show_details)
+        if self.library_list is not None:
+            self.library_list.setVisible(show_list)
+        sizes = []
+        total = max(self.shell.width(), 900)
+        for widget in (self.library_list, self.scroll, self.details):
+            if widget is None:
+                continue
+            sizes.append(PANE_WIDTH if widget is self.library_list else PANEL_WIDTH + 20 if widget is self.details else total)
+        self.shell.setSizes(sizes)
+
+    def _on_details_toggled(self, checked):
+        self._settings.watch_details = checked
+        self._apply_panes()
+
+    def show_empty(self):
+        """Tela do vídeo sem vídeo aberto: o player para e os painéis ficam vazios."""
+        self._request += 1
+        self._info, self._video, self._last_id = None, None, None
+        self.player.stop()
+        self._player_source = None
+        self.stack.setCurrentIndex(_EMPTY)
+        self.details.set_video(None)
+        self._update_related()
+        if self.library_list is not None:
+            self.library_list.set_current(None)
+
+    def _update_side(self):
+        """Painéis acompanham o vídeo aberto."""
+        video = self._video
+        self.details.set_video(video)
+        if self.library_list is not None:
+            self.library_list.set_current(video.id if video is not None else None)
+        self._update_related()
+
+    def _update_related(self):
+        video = self._video
+        if video is None or self._org is None or not self._profile.related or not self._library.ready:
+            self.related.set_videos([], self._library.thumbnail_path)
+            return
+        self.related.set_videos(recommend.related(video, self._org.load_data()), self._library.thumbnail_path)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if self._profile.library_list or self._profile.details_panel:
+            self._apply_panes()
         # o player ocupa no máximo ~62% da altura: título, ações e download continuam à vista
         self.player.set_max_height(self.height() * 0.62)
 
     def hideEvent(self, event):
         super().hideEvent(event)
         if not event.spontaneous() and not self.player.is_mini:  # no mini player o vídeo continua; minimizar a janela não conta
-            self.player.stop()
+            try:
+                self.player.stop()
+            except RuntimeError:  # a janela está sendo destruída e os filhos já se foram
+                return
             self._player_source = None
 
     def _sync_player(self):
@@ -368,6 +494,7 @@ class WatchPage(Page):
         self._init_streams()
         self.stack.setCurrentIndex(_CONTENT)
         self._sync_player()
+        self._update_side()
 
     def _render_actions(self):
         t = self._tr.t
@@ -646,6 +773,9 @@ class WatchPage(Page):
         self.player.set_tokens(tokens)
         self.back_button.setIcon(icon("back", tokens["text_primary"], 18))
         self.browser_button.setIcon(icon("external", tokens["text_primary"], 18))
+        self.related.set_tokens(tokens)
+        if self.library_list is not None:
+            self.library_list.set_tokens(tokens)
         if self._info is not None:
             self._render_actions()
         else:
@@ -660,6 +790,13 @@ class WatchPage(Page):
         self.browser_button.setText(t("watch.open_browser"))
         self.categories_button.setText(t("watch.categories") + " ▾")
         self.playlists_button.setText(t("watch.playlists") + " ▾")
+        self.details_toggle.setText(t("details.toggle"))
+        self.details_toggle.setToolTip(t("details.toggle"))
+        self.details_toggle.setAccessibleName(t("details.toggle"))
+        self.empty_label.setText(t("watch.empty"))
+        self.details.retranslate()
+        if self.library_list is not None:
+            self.library_list.retranslate()
         self.player.retranslate()
         if self._info is not None:
             self._render()

@@ -1,0 +1,297 @@
+import pytest
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel
+
+from app.domain import layouts
+from app.domain.models import Progress
+from app.ui.widgets.hero_banner import HeroBanner
+from app.ui.widgets.thumb_row import ThumbRow
+from tests.fakes import FakeProvider
+
+
+@pytest.fixture
+def w(window_factory):
+    return window_factory()
+
+
+def add(w, i, title=None):
+    """Cada vídeo tem canal próprio, para os relacionados dependerem só do que o teste configurar."""
+    video, _ = w.library.save_info(FakeProvider("f", title=title or f"Vídeo {i}").fetch_info(f"vid{i:08d}"))
+    video.channel = f"Canal {i}"
+    w.library.store.update_video(video)
+    return video
+
+
+def choose(w, key):
+    w.show_page("settings")
+    w.settings_page.layout_buttons[key].click()
+
+
+# ======================= seletor =======================
+def test_settings_lists_the_six_layouts_with_names_and_descriptions(w):
+    buttons = w.settings_page.layout_buttons
+    assert list(buttons) == list(layouts.LAYOUT_CHOICES)
+    assert buttons["classic"].isChecked()
+    assert buttons["streaming"].accessibleName() == "Streaming"
+    assert "Menu lateral" in buttons["classic"].toolTip()
+
+
+@pytest.mark.parametrize("key", layouts.LAYOUT_CHOICES)
+def test_each_layout_can_be_chosen_and_persists(window_factory, settings, key):
+    w = window_factory()
+    choose(w, key)
+    assert settings.layout == key and w.settings_page.layout_buttons[key].isChecked()
+    assert w.layouts.key == key
+    again = window_factory()
+    assert again.layouts.key == key and again.settings_page.layout_buttons[key].isChecked()
+
+
+def test_layout_and_theme_are_independent(w, settings):
+    choose(w, "cinema")
+    w.settings_page.theme_buttons["nord"].click()
+    assert settings.layout == "cinema" and settings.theme == "nord"
+    choose(w, "classic")
+    assert settings.theme == "nord"
+
+
+def test_layout_preview_uses_the_current_theme(w):
+    swatch = w.settings_page.layout_buttons["streaming"]
+    w.settings_page.theme_buttons["dracula"].click()
+    from app.styles.tokens import THEMES
+
+    assert swatch._tokens["accent"] == THEMES["dracula"]["accent"]
+
+
+def test_landing_page_of_each_layout(w):
+    choose(w, "manager")
+    assert w.current_page == "library"
+    choose(w, "workstation")
+    assert w.current_page == "watch"
+    choose(w, "classic")
+    assert w.current_page == "home"
+
+
+def test_sidebar_follows_the_layout(w):
+    assert w.sidebar.mode == "full" and not w.sidebar.collapsed
+    choose(w, "streaming")
+    assert w.sidebar.mode == "icons" and w.sidebar.collapsed
+    choose(w, "compact")
+    assert w.sidebar.isHidden()
+    choose(w, "classic")
+    assert w.sidebar.mode == "full" and not w.sidebar.isHidden()
+
+
+def test_icons_sidebar_can_be_peeked_open_without_changing_the_saved_preference(w, settings):
+    choose(w, "streaming")
+    w.sidebar._toggle.click()
+    assert not w.sidebar.collapsed and settings.sidebar_collapsed is False
+    w.sidebar._toggle.click()
+    assert w.sidebar.collapsed and settings.sidebar_collapsed is False
+
+
+def test_user_collapse_preference_is_kept_through_layout_changes(w, settings):
+    w.sidebar.set_collapsed(True)
+    choose(w, "streaming")
+    choose(w, "classic")
+    assert w.sidebar.collapsed and settings.sidebar_collapsed is True
+
+
+# ======================= B. Streaming =======================
+def test_streaming_home_has_hero_rows_and_opens_videos(w):
+    a, b = add(w, 1, "Aula A"), add(w, 2, "Aula B")
+    w.progress.save(a.id, 120, 600)
+    choose(w, "streaming")
+    w.show_page("home")
+    home = w.pages["home"]
+    hero = home.findChildren(HeroBanner)[0]
+    assert hero.video.id == a.id  # em andamento vem primeiro
+    assert "2:00" in hero.play_button.text()  # 'Continuar de 2:00'
+    titles = [lbl.text() for lbl in home.findChildren(QLabel) if lbl.objectName() == "sectionTitle"]
+    assert "Continuar assistindo" in titles and "Adicionados recentemente" in titles
+    hero.play_button.click()
+    assert w.current_page == "watch" and w.watch_page.player.video.id == a.id
+
+
+def test_streaming_home_shows_the_classic_grid_again_when_layout_goes_back(w):
+    add(w, 1)
+    choose(w, "streaming")
+    w.show_page("home")
+    assert w.pages["home"].findChildren(HeroBanner)
+    choose(w, "classic")
+    assert w.current_page == "home" and not w.pages["home"].findChildren(HeroBanner)
+
+
+def test_streaming_rows_include_categories_playlists_and_recommendations(w):
+    a, b, c = add(w, 1, "A"), add(w, 2, "B"), add(w, 3, "C")
+    cat = w.org.create_category("Estudo")
+    w.org.assign_categories([a.id, b.id, c.id], add=[cat.id])
+    pl = w.org.create_playlist("Minha lista")
+    w.org.add_to_playlist(pl.id, [a.id])
+    w.progress.save(a.id, 100, 600)
+    choose(w, "streaming")
+    w.show_page("home")
+    text = " | ".join(lbl.text() for lbl in w.pages["home"].findChildren(QLabel) if lbl.objectName() == "sectionTitle")
+    assert "Estudo" in text and "Suas playlists" in text and "Porque você assistiu" in text
+
+
+def test_playlist_card_in_streaming_row_opens_the_playlist(w):
+    a = add(w, 1)
+    pl = w.org.create_playlist("Lista X")
+    w.org.add_to_playlist(pl.id, [a.id])
+    choose(w, "streaming")
+    w.show_page("home")
+    from app.ui.pages.categories_page import CollectionCard
+
+    card = w.pages["home"].findChildren(CollectionCard)[0]
+    card.opened.emit(card.item_id)
+    assert w.current_page == "playlist" and w.playlist_page.playlist_id == pl.id
+
+
+def test_thumb_row_arrows_follow_the_scroll_range(w):
+    for i in range(1, 15):
+        add(w, i)
+    choose(w, "streaming")
+    w.resize(900, 800)
+    w.show_page("home")
+    row = w.pages["home"].findChildren(ThumbRow)[0]
+    bar = row.scroll.horizontalScrollBar()
+    assert bar.maximum() > 0
+    assert row.next_button.isEnabled() and not row.prev_button.isEnabled()
+    bar.setValue(bar.maximum())
+    assert row.prev_button.isEnabled() and not row.next_button.isEnabled()
+
+
+# ======================= A. Clássica: detalhes e relacionados =======================
+def test_details_toggle_is_classic_only_and_persists(w, settings):
+    wp = w.watch_page
+    assert not wp.details_toggle.isHidden() and wp.details.isHidden()
+    wp.details_toggle.click()
+    assert not wp.details.isHidden() and settings.watch_details is True
+    wp.details_toggle.click()
+    assert wp.details.isHidden() and settings.watch_details is False
+    wp.details_toggle.click()
+    choose(w, "cinema")
+    assert wp.details.isHidden() and wp.details_toggle.isHidden()
+
+
+def test_related_strip_shows_videos_that_share_a_category(w):
+    a, b, c = add(w, 1, "Principal"), add(w, 2, "Parecido"), add(w, 3, "Outro assunto")
+    cat = w.org.create_category("Python")
+    w.org.assign_categories([a.id, b.id], add=[cat.id])
+    w.open_saved_video(a.id)
+    related = w.watch_page.related
+    assert not related.isHidden() and [i.video_id for i in related.items] == [b.id]
+    related.items[0].open_requested.emit(b.id)
+    assert w.watch_page.player.video.id == b.id
+
+
+def test_related_strip_hidden_when_nothing_in_common_and_in_cinema_layout(w):
+    a, b = add(w, 1), add(w, 2)
+    w.open_saved_video(a.id)
+    assert w.watch_page.related.isHidden()
+    cat = w.org.create_category("X")
+    w.org.assign_categories([a.id, b.id], add=[cat.id])
+    w.open_saved_video(a.id)
+    assert not w.watch_page.related.isHidden()
+    choose(w, "cinema")
+    assert w.watch_page.related.isHidden()
+
+
+# ======================= E. Estação de trabalho =======================
+@pytest.fixture
+def station(w):
+    w.resize(1400, 850)
+    choose(w, "workstation")
+    return w
+
+
+def test_workstation_shows_list_player_and_details_at_once(station):
+    wp = station.watch_page
+    a = add(station, 1, "Aula 1")
+    station.open_saved_video(a.id)
+    assert not wp.library_list.isHidden() and not wp.details.isHidden()
+    assert wp.details.video.id == a.id and wp.details.name_label.text() == "Aula 1"
+    assert wp.library_list.list.count() == 1
+
+
+def test_workstation_starts_empty_and_panes_hide_on_narrow_windows(station):
+    wp = station.watch_page
+    assert station.current_page == "watch" and wp.stack.currentIndex() == 3
+    assert wp.details.video is None and not wp.details.notes.isEnabled()
+    station.resize(1100, 800)
+    assert wp.library_list.isHidden() and not wp.details.isHidden()
+    station.resize(940, 800)
+    assert wp.details.isHidden()
+    station.resize(1400, 850)
+    assert not wp.library_list.isHidden() and not wp.details.isHidden()
+
+
+def test_clicking_the_list_opens_the_video_in_the_center(station):
+    a, b = add(station, 1, "Primeiro"), add(station, 2, "Segundo")
+    station.open_saved_video(a.id)
+    lst = station.watch_page.library_list
+    row = next(i for i in range(lst.list.count()) if lst.list.item(i).data(Qt.UserRole) == b.id)
+    lst.list.itemClicked.emit(lst.list.item(row))
+    assert station.watch_page.player.video.id == b.id and station.watch_page.details.video.id == b.id
+
+
+def test_list_search_filters_and_marks_the_current_video(station, qtbot):
+    a, b = add(station, 1, "Python avançado"), add(station, 2, "Receita de bolo")
+    station.open_saved_video(a.id)
+    lst = station.watch_page.library_list
+    lst.search.setText("receita")
+    qtbot.waitUntil(lambda: lst.list.count() == 1, timeout=3000)
+    assert lst.list.item(0).data(Qt.UserRole) == b.id
+    lst.search.setText("")
+    qtbot.waitUntil(lambda: lst.list.count() == 2, timeout=3000)
+    assert lst.list.currentItem().data(Qt.UserRole) == a.id
+
+
+def test_notes_autosave_after_typing_and_survive_switching_videos(station, qtbot):
+    a, b = add(station, 1), add(station, 2)
+    station.open_saved_video(a.id)
+    details = station.watch_page.details
+    details.notes.setPlainText("anotação da aula 1")
+    qtbot.waitUntil(lambda: station.library.get(a.id).notes == "anotação da aula 1", timeout=3000)
+    assert "salvas" in details.status_label.text()
+    details.notes.setPlainText("rascunho ainda não gravado")
+    station.open_saved_video(b.id)  # trocar de vídeo grava o que estava pendente, no vídeo certo
+    assert station.library.get(a.id).notes == "rascunho ainda não gravado" and station.library.get(b.id).notes == ""
+    assert details.notes.toPlainText() == ""
+    station.open_saved_video(a.id)
+    assert details.notes.toPlainText() == "rascunho ainda não gravado"
+
+
+def test_insert_timestamp_adds_current_position(station):
+    a = add(station, 1)
+    station.open_saved_video(a.id)
+    player = station.watch_page.player
+    player._backend.loaded.emit()
+    player._on_position(player._backend, 754.0, 900.0)
+    details = station.watch_page.details
+    details.timestamp_button.click()
+    assert details.notes.toPlainText().startswith("[12:34] ")
+
+
+def test_details_shows_categories_and_updates_when_they_change(station):
+    a = add(station, 1)
+    station.open_saved_video(a.id)
+    details = station.watch_page.details
+    assert details.categories_label.text() == "Sem categorias"
+    cat = station.org.create_category("Estudo")
+    station.org.assign_categories([a.id], add=[cat.id])
+    station.library.notify()
+    assert details.categories_label.text() == "Estudo"
+
+
+def test_unsaved_video_has_notes_disabled(station):
+    station.watch_page.details.set_video(None)
+    assert not station.watch_page.details.notes.isEnabled()
+    assert "Salve o vídeo" in station.watch_page.details.status_label.text()
+
+
+def test_removing_the_open_video_clears_the_details_panel(station):
+    a = add(station, 1)
+    station.open_saved_video(a.id)
+    station.library.remove(a.id)
+    assert station.watch_page.details.video is None
