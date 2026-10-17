@@ -14,6 +14,7 @@ from app.ui.player.local_player import LocalPlayer
 from app.ui.workers import run_async
 
 MAX_WIDTH = 1000
+UNLIMITED = 16777215  # modo cinema: o player usa toda a largura que couber
 MINI_WIDTH = 420
 MINI_MARGIN = 24
 SAVE_INTERVAL_MS = 5000
@@ -141,6 +142,7 @@ class PlayerWidget(QFrame):
         self._muted = False
         self._fullscreen = False
         self._mini = False
+        self._cinema = False
         self._host_layout = None
         self._host_index = 0
         self._max_height = None
@@ -197,7 +199,7 @@ class PlayerWidget(QFrame):
         self._notice_timer.setSingleShot(True)
         self._notice_timer.setInterval(NOTICE_MS)
         self._notice_timer.timeout.connect(self.notice.hide)
-        self.setMaximumWidth(MAX_WIDTH)
+        self.setMaximumWidth(self._width_limit())
         self.retranslate()
 
     # ------------------------------------------------------------------------------------
@@ -210,6 +212,21 @@ class PlayerWidget(QFrame):
     @property
     def video(self):
         return self._video
+
+    def _width_limit(self):
+        return UNLIMITED if self._cinema else MAX_WIDTH
+
+    def set_cinema(self, enabled):
+        """Modo cinema: sem limite de largura (o limite passa a ser a altura disponível)."""
+        if enabled != self._cinema:
+            self._cinema = enabled
+            if not self._mini and not self._fullscreen:
+                self.setMaximumWidth(self._width_limit())
+            if self._max_height:
+                self.set_max_height(self._max_height)
+
+    def is_playing(self):
+        return self._backend is not None and self._backend.is_playing()
 
     @property
     def position(self):
@@ -548,7 +565,7 @@ class PlayerWidget(QFrame):
         self._fullscreen = False
         self.showNormal()
         self.setWindowFlag(Qt.Window, False)
-        self.setMaximumWidth(MAX_WIDTH)
+        self.setMaximumWidth(self._width_limit())
         if self._host_layout is not None:
             self._host_layout.insertWidget(self._host_index, self)
         self.show()
@@ -607,7 +624,7 @@ class PlayerWidget(QFrame):
         self.hide()
         self.setWindowFlags(Qt.Widget)
         self.setMinimumWidth(0)
-        self.setMaximumWidth(MAX_WIDTH)
+        self.setMaximumWidth(self._width_limit())
         self.mini_bar.hide()
         self.controls.set_mini(False)
         if self._host_layout is not None:
@@ -635,7 +652,7 @@ class PlayerWidget(QFrame):
     def set_max_height(self, height):
         self._max_height = max(220, int(height))
         controls_h = self.controls.sizeHint().height()
-        self.setMaximumWidth(min(MAX_WIDTH, int((self._max_height - controls_h) * 16 / 9)))
+        self.setMaximumWidth(min(self._width_limit(), int((self._max_height - controls_h) * 16 / 9)))
         self._apply_geometry()
 
     def _apply_geometry(self):

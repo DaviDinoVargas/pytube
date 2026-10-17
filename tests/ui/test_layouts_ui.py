@@ -295,3 +295,111 @@ def test_removing_the_open_video_clears_the_details_panel(station):
     station.open_saved_video(a.id)
     station.library.remove(a.id)
     assert station.watch_page.details.video is None
+
+
+# ======================= C. Modo cinema =======================
+@pytest.fixture
+def cinema(w):
+    w.resize(1300, 820)
+    choose(w, "cinema")
+    return w
+
+
+def start(w, i=1):
+    v = add(w, i)
+    w.open_saved_video(v.id)
+    w.watch_page.player._backend.loaded.emit()
+    return v
+
+
+def test_cinema_hides_sidebar_and_top_bar_only_while_watching(cinema):
+    assert cinema.sidebar.mode == "icons" and not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+    start(cinema)
+    assert cinema.sidebar.isHidden() and cinema.top_bar.isHidden()
+    cinema.show_page("library")
+    assert not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+
+
+def test_cinema_player_fills_the_window_on_a_black_stage(cinema):
+    start(cinema)
+    wp = cinema.watch_page
+    assert wp.stage.property("cinema") is True and wp.cinema
+    assert wp.player.maximumWidth() > 1000 and wp.player.width() > 1000
+    assert wp.stage.minimumHeight() >= wp.height() - 40
+    assert "QFrame#stage[cinema=\"true\"] { background: #000000" in __import__("PySide6.QtWidgets", fromlist=["QApplication"]).QApplication.instance().styleSheet()
+
+
+def test_cinema_overlay_shows_title_and_buttons(cinema):
+    v = start(cinema)
+    wp = cinema.watch_page
+    assert not wp.cinema_bar.isHidden() and wp.cinema_title.text() == v.title
+    assert wp.back_button.isHidden() and wp.details_toggle.isHidden()
+    wp.cinema_back.click()
+    assert cinema.current_page != "watch"
+
+
+def test_controls_hide_when_idle_and_playing_and_return_on_activity(cinema):
+    start(cinema)
+    wp = cinema.watch_page
+    wp.player._backend._playing = True
+    wp._on_activity(False)
+    assert wp._controls_fade.opacity() == 0.0 and wp.cinema_bar.isHidden()
+    assert wp.player.controls.testAttribute(Qt.WA_TransparentForMouseEvents)
+    wp._on_activity(True)
+    assert wp._controls_fade.opacity() == 1.0 and not wp.cinema_bar.isHidden()
+    assert not wp.player.controls.testAttribute(Qt.WA_TransparentForMouseEvents)
+
+
+def test_controls_stay_visible_when_paused(cinema):
+    start(cinema)
+    wp = cinema.watch_page
+    wp.player._backend._playing = False
+    wp._on_activity(False)
+    assert wp._controls_fade.opacity() == 1.0 and not wp.cinema_bar.isHidden()
+
+
+def test_idle_watcher_runs_only_in_cinema_while_the_page_is_shown(cinema):
+    wp = cinema.watch_page
+    assert not wp.idle.running  # a página ainda não está visível
+    start(cinema)
+    assert wp.idle.running
+    cinema.show_page("home")
+    assert not wp.idle.running
+    choose(cinema, "classic")
+    cinema.open_saved_video(1)
+    assert not wp.idle.running and wp.cinema_bar.isHidden() and wp._controls_fade.opacity() == 1.0
+
+
+def test_leaving_cinema_restores_the_standard_watch_page(cinema):
+    start(cinema)
+    choose(cinema, "classic")
+    cinema.open_saved_video(1)
+    wp = cinema.watch_page
+    assert wp.player.maximumWidth() <= 1000 and wp.stage.property("cinema") is False
+    assert not wp.back_button.isHidden() and not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+
+
+def test_info_button_scrolls_to_the_details_below_the_video_and_back(cinema):
+    start(cinema)
+    wp = cinema.watch_page
+    bar = wp.scroll.verticalScrollBar()
+    assert bar.maximum() > 0 and bar.value() == 0
+    wp.cinema_info.click()
+    assert bar.value() > 0
+    wp.cinema_info.click()
+    assert bar.value() == 0
+
+
+def test_idle_watcher_poke_and_timeout(qtbot):
+    from app.ui.idle import IdleWatcher
+
+    watcher = IdleWatcher(timeout_ms=120, interval_ms=30)
+    states = []
+    watcher.active_changed.connect(states.append)
+    watcher.start()
+    qtbot.waitUntil(lambda: states == [False], timeout=3000)
+    watcher.poke()
+    assert states == [False, True]
+    qtbot.waitUntil(lambda: states == [False, True, False], timeout=3000)
+    watcher.stop()
+    assert states[-1] is True and not watcher.running

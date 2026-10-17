@@ -4,6 +4,7 @@ from PySide6.QtCore import QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
+    QGraphicsOpacityEffect,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QToolButton,
@@ -27,6 +29,7 @@ from app.services import download_service as ds
 from app.services.storage_service import format_bytes
 from app.styles.icons import icon
 from app.ui.errors import describe_error
+from app.ui.idle import IdleWatcher
 from app.ui.pages.base import Page
 from app.ui.widgets.flow_layout import FlowLayout
 from app.ui.widgets.details_panel import PANEL_WIDTH, DetailsPanel
@@ -161,7 +164,14 @@ class WatchPage(Page):
         self.player.folder_requested.connect(self._open_local_folder)
         self.player.height_changed.connect(self.set_player_height)
         self.player.playback_ended.connect(self.playback_ended)
-        col.addWidget(self.player)
+        self.stage = QFrame()  # no modo cinema é o palco preto que ocupa a janela; nos demais, só um suporte
+        self.stage.setObjectName("stage")
+        self.stage_layout = QHBoxLayout(self.stage)
+        self.stage_layout.setContentsMargins(0, 0, 0, 0)
+        self.stage_layout.addStretch(0)
+        self.stage_layout.addWidget(self.player, 1, Qt.AlignTop)
+        self.stage_layout.addStretch(0)
+        col.addWidget(self.stage)
         self.title_label = QLabel()
         self.title_label.setObjectName("watchTitle")
         self.title_label.setWordWrap(True)
@@ -300,10 +310,108 @@ class WatchPage(Page):
         root.addWidget(self.shell, 1)
         self.library_list and self.library_list.hide()
         self.details.hide()
+        self._build_cinema_bar(tokens)
+
+    # -- modo cinema: título e botões flutuam sobre o vídeo e somem quando o mouse para ----------------
+    def _build_cinema_bar(self, tokens):
+        self.cinema_bar = QFrame(self)
+        self.cinema_bar.setObjectName("cinemaBar")
+        row = QHBoxLayout(self.cinema_bar)
+        row.setContentsMargins(16, 10, 16, 18)
+        row.setSpacing(10)
+        self.cinema_back = QToolButton()
+        self.cinema_back.setObjectName("cinemaButton")
+        self.cinema_back.setCursor(Qt.PointingHandCursor)
+        self.cinema_back.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.cinema_back.setIconSize(QSize(18, 18))
+        self.cinema_back.clicked.connect(self.back_requested)
+        self.cinema_title = QLabel()
+        self.cinema_title.setObjectName("cinemaTitle")
+        self.cinema_info = QToolButton()
+        self.cinema_info.setObjectName("cinemaButton")
+        self.cinema_info.setCursor(Qt.PointingHandCursor)
+        self.cinema_info.clicked.connect(self._show_info_below)
+        row.addWidget(self.cinema_back)
+        row.addWidget(self.cinema_title, 1)
+        row.addWidget(self.cinema_info)
+        self.cinema_bar.hide()
+        self._controls_fade = QGraphicsOpacityEffect(self.player.controls)
+        self._controls_fade.setEnabled(False)
+        self.player.controls.setGraphicsEffect(self._controls_fade)
+        self.idle = IdleWatcher(self)
+        self.idle.active_changed.connect(self._on_activity)
+
+    @property
+    def cinema(self):
+        return self._profile.watch == layouts.WATCH_CINEMA
+
+    def _on_activity(self, active):
+        """Mostra ou esconde os controles e a barra do modo cinema. Só esconde com o vídeo tocando."""
+        if not self.cinema:
+            return
+        hide = not active and self.player.is_playing()
+        self._controls_fade.setEnabled(True)
+        self._controls_fade.setOpacity(0.0 if hide else 1.0)
+        self.player.controls.setAttribute(Qt.WA_TransparentForMouseEvents, hide)
+        self.cinema_bar.setVisible(not hide and self.stack.currentIndex() == _CONTENT)
+        self.setCursor(Qt.BlankCursor if hide else Qt.ArrowCursor)
+
+    def _show_info_below(self):
+        """No modo cinema as informações ficam abaixo do vídeo: rola até elas (e volta ao tocar de novo no botão)."""
+        bar = self.scroll.verticalScrollBar()
+        bar.setValue(bar.minimum() if bar.value() > bar.minimum() else self.stage.height())
+
+    def _apply_cinema(self):
+        cinema = self.cinema
+        self.stage.setProperty("cinema", cinema)
+        self.stage.style().unpolish(self.stage)
+        self.stage.style().polish(self.stage)
+        self.player.set_cinema(cinema)
+        # clássico: player à esquerda (até a largura máxima); cinema: centralizado, com o máximo de largura que couber
+        lead = self.stage_layout.itemAt(0).spacerItem()  # só o cinema centraliza: o espaço da esquerda passa a existir
+        lead.changeSize(0, 0, QSizePolicy.Expanding if cinema else QSizePolicy.Fixed, QSizePolicy.Minimum)
+        self.stage_layout.invalidate()
+        self.stage_layout.setStretch(0, 1 if cinema else 0)
+        self.stage_layout.setStretch(1, 100 if cinema else 1)
+        self.stage_layout.setStretch(2, 1 if cinema else 0)
+        self.stage_layout.setAlignment(self.player, Qt.AlignVCenter if cinema else Qt.AlignTop)
+        self.back_button.setVisible(not cinema)
+        self.body.setSpacing(0 if cinema else 16)
+        spacer = self.layout().itemAt(2).spacerItem()  # o respiro entre o título (oculto) e o conteúdo
+        if spacer is not None:
+            spacer.changeSize(0, 0 if cinema else 16)
+            self.layout().invalidate()
+        if cinema:
+            self.details_toggle.hide()
+            self.cinema_bar.setVisible(self.stack.currentIndex() == _CONTENT)
+            self.cinema_bar.raise_()
+            self._layout_cinema()
+            if self.isVisible():
+                self.idle.start()
+        else:
+            self.idle.stop()
+            self.cinema_bar.hide()
+            self._controls_fade.setOpacity(1.0)
+            self._controls_fade.setEnabled(False)
+            self.player.controls.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            self.setCursor(Qt.ArrowCursor)
+            self.stage.setMinimumHeight(0)
+
+    def _stage_height(self):
+        """Altura do palco: a janela toda (a página, menos a margem inferior da rolagem)."""
+        return max(0, self.height() - self.body.contentsMargins().bottom())
+
+    def _layout_cinema(self):
+        """Barra no topo da página e palco com a altura toda da janela (o vídeo fica centralizado nele)."""
+        self.cinema_bar.setGeometry(0, 0, self.width(), self.cinema_bar.sizeHint().height())
+        self.cinema_bar.raise_()
+        self.stage.setMinimumHeight(self._stage_height())
+        self.player.set_max_height(self._stage_height())
 
     def set_layout(self, profile):
         self._profile = profile
         self._apply_panes()
+        self._apply_cinema()
         self.related.set_allowed(profile.related)
         self._update_related()
 
@@ -369,11 +477,20 @@ class WatchPage(Page):
         super().resizeEvent(event)
         if self._profile.library_list or self._profile.details_panel:
             self._apply_panes()
+        if self.cinema:
+            self._layout_cinema()  # o vídeo usa a janela toda
+            return
         # o player ocupa no máximo ~62% da altura: título, ações e download continuam à vista
         self.player.set_max_height(self.height() * 0.62)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.cinema:
+            self.idle.start()
+
     def hideEvent(self, event):
         super().hideEvent(event)
+        self.idle.stop()
         if not event.spontaneous() and not self.player.is_mini:  # no mini player o vídeo continua; minimizar a janela não conta
             try:
                 self.player.stop()
@@ -483,6 +600,7 @@ class WatchPage(Page):
         t = self._tr.t
         info = self._info
         self.title_label.setText(info.title)
+        self.cinema_title.setText(info.title)
         parts = [p for p in (info.channel, format_duration(info.duration)) if p]
         if self._video is not None:
             added = format_added(self._video.added_at, self._tr.language)
@@ -495,6 +613,10 @@ class WatchPage(Page):
         self.stack.setCurrentIndex(_CONTENT)
         self._sync_player()
         self._update_side()
+        if self.cinema:
+            self.cinema_bar.setVisible(True)
+            self._layout_cinema()
+            self.idle.poke()
 
     def _render_actions(self):
         t = self._tr.t
@@ -772,6 +894,7 @@ class WatchPage(Page):
         self._tokens = tokens
         self.player.set_tokens(tokens)
         self.back_button.setIcon(icon("back", tokens["text_primary"], 18))
+        self.cinema_back.setIcon(icon("back", "#FFFFFF", 18))
         self.browser_button.setIcon(icon("external", tokens["text_primary"], 18))
         self.related.set_tokens(tokens)
         if self.library_list is not None:
@@ -794,6 +917,10 @@ class WatchPage(Page):
         self.details_toggle.setToolTip(t("details.toggle"))
         self.details_toggle.setAccessibleName(t("details.toggle"))
         self.empty_label.setText(t("watch.empty"))
+        self.cinema_back.setText(" " + t("watch.back"))
+        self.cinema_info.setText(t("watch.info"))
+        self.cinema_info.setToolTip(t("watch.info_tip"))
+        self.cinema_info.setAccessibleName(t("watch.info_tip"))
         self.details.retranslate()
         if self.library_list is not None:
             self.library_list.retranslate()

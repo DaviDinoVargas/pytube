@@ -191,6 +191,14 @@ QListWidget#libraryListView::item:selected {{ background: {t['accent_soft']}; }}
 QFrame#relatedItem:focus {{ border: 2px solid {t['focus']}; border-radius: {r['sm']}px; }}
 QFrame#relatedItem QLabel {{ background: transparent; }}
 QSplitter::handle {{ background: transparent; }}
+QFrame#stage[cinema="true"] {{ background: #000000; }}
+QFrame#cinemaBar {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0, 0, 0, 200), stop:1 rgba(0, 0, 0, 0)); }}
+QLabel#cinemaTitle {{ color: #FFFFFF; font-size: 15px; font-weight: 700; background: transparent; }}
+QToolButton#cinemaButton {{
+    color: #FFFFFF; background: rgba(255, 255, 255, 38); border: none; border-radius: {r['sm']}px; padding: 6px 12px; font-weight: 600;
+}}
+QToolButton#cinemaButton:hover {{ background: rgba(255, 255, 255, 80); }}
+QToolButton#cinemaButton:focus {{ border: 2px solid #FFFFFF; padding: 4px 10px; }}
 QFrame#playerNotice {{ background: {t['accent_soft']}; }}
 QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#sourceChip {{
