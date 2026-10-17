@@ -16,33 +16,9 @@ class _EmptyPage(Page):
             self.empty.retranslate()
 
 
-class HomePage(_EmptyPage):
-    key = "home"
-
-
 class ContinuePage(_EmptyPage):
     key = "continue"
 
 
-class LibraryPage(_EmptyPage):
-    key = "library"
-
-
-class DownloadedPage(_EmptyPage):
-    key = "downloaded"
-
-
-class PlaylistsPage(_EmptyPage):
-    key = "playlists"
-
-
-class CategoriesPage(_EmptyPage):
-    key = "categories"
-
-
 class HistoryPage(_EmptyPage):
     key = "history"
-
-
-class DownloadsPage(_EmptyPage):
-    key = "downloads"

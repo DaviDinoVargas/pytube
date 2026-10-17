@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
@@ -6,12 +6,19 @@ from app import APP_NAME
 from app.infrastructure.media.ffmpeg import MediaError, bundled_root, locate
 from app.services.download_service import DownloadManager
 from app.services.library_service import LibraryService
+from app.services.organization_service import OrganizationService
 from app.services.progress_service import ProgressService
+from app.ui.dialogs.name_dialog import NameDialog
+from app.ui.organize_menus import OrganizeMenus
 from app.ui.player import shortcuts
+from app.ui.query_state import QueryState
 from app.styles.icons import icon
 from app.ui.pages.downloads_page import DownloadsPage
-from app.ui.pages.placeholder_pages import CategoriesPage, ContinuePage, HistoryPage, PlaylistsPage
-from app.ui.pages.video_pages import DownloadedPage, HomePage, LibraryPage
+from app.ui.pages.categories_page import CategoriesPage
+from app.ui.pages.placeholder_pages import ContinuePage, HistoryPage
+from app.ui.pages.playlists_page import PlaylistDetailPage, PlaylistsPage
+from app.ui.pages.library_page import LibraryPage
+from app.ui.pages.video_pages import DownloadedPage, HomePage
 from app.ui.pages.watch_page import WatchPage, watch_url
 from app.ui.workers import run_async
 from app.services.storage_service import STATUS_READY
@@ -30,6 +37,9 @@ class MainWindow(QMainWindow):
         self._storage = storage
         self.library = LibraryService(storage, providers, thumbnails)
         self.progress = ProgressService(self.library)
+        self.org = OrganizationService(self.library)
+        self.query_state = QueryState(settings)
+        self.organize = OrganizeMenus(translator, self.org, self._prompt_category, self._prompt_playlist, self._on_organized)
         self._tools = None
         self._tools_getter = tools_getter
         self.downloads = DownloadManager(
@@ -60,14 +70,16 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages = {}
         library = self.library
-        video_args = dict(can_download=lambda: library.ready, download_status=self.downloads.status_for_video)
+        video_args = dict(
+            can_download=lambda: library.ready, download_status=self.downloads.status_for_video, organize=self.organize
+        )
         for page in (
-            HomePage(translator, library, tokens, **video_args),
+            HomePage(translator, library, tokens, org=self.org, **video_args),
             ContinuePage(translator),
-            LibraryPage(translator, library, tokens, **video_args),
+            LibraryPage(translator, library, tokens, self.org, self.query_state, settings, **video_args),
             DownloadedPage(translator, library, tokens, **video_args),
-            PlaylistsPage(translator),
-            CategoriesPage(translator),
+            PlaylistsPage(translator, self.org, library, tokens, self._prompt_playlist),
+            CategoriesPage(translator, self.org, library, tokens, self._prompt_category),
             HistoryPage(translator),
             DownloadsPage(translator, self.downloads, library, tokens),
         ):
@@ -79,8 +91,12 @@ class MainWindow(QMainWindow):
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
         self.watch_page = WatchPage(
-            translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options
+            translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options, self.organize
         )
+        self.watch_page.playback_ended.connect(self._on_playback_ended)
+        self.playlist_page = PlaylistDetailPage(translator, self.org, library, tokens)
+        self._add_page(self.playlist_page)
+        self._playlist_id = None
         self.watch_page.back_requested.connect(self._go_back)
         self.watch_page.message.connect(self.top_bar.show_message)
         self._add_page(self.watch_page)
@@ -89,7 +105,22 @@ class MainWindow(QMainWindow):
                 page.video_opened.connect(self.open_saved_video)
             if hasattr(page, "video_action"):
                 page.video_action.connect(self._on_video_action)
+        self.pages["home"].category_all_requested.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
+        self.pages["categories"].message.connect(self.top_bar.show_message)
+        self.pages["categories"].category_opened.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
+        self.pages["playlists"].message.connect(self.top_bar.show_message)
+        self.pages["playlists"].playlist_opened.connect(self.open_playlist)
+        self.pages["playlists"].play_requested.connect(lambda pid: self.play_playlist(pid))
+        self.playlist_page.back_requested.connect(lambda: self.show_page("playlists"))
+        self.playlist_page.play_requested.connect(self.play_playlist)
         self.pages["downloads"].message.connect(self.top_bar.show_message)
+        self.pages["library"].message.connect(self.top_bar.show_message)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._apply_search)
+        self.top_bar.search_changed.connect(lambda _text: self._search_timer.start())
+        self.query_state.changed.connect(self._sync_search_field)
         library.changed.connect(self._on_library_changed)
         self.downloads.queue_changed.connect(self._on_downloads_changed)
         column.addWidget(self.stack, 1)
@@ -137,12 +168,12 @@ class MainWindow(QMainWindow):
     def show_page(self, key):
         if key not in self.pages:
             return
-        if key not in ("settings", "watch"):
+        if key not in ("settings", "watch", "playlist"):
             self._previous_page = key
         self.stack.setCurrentWidget(self.pages[key])
         self.settings_button.setChecked(key == "settings")
-        self.sidebar.select(key)
-        if key != "watch":
+        self.sidebar.select("playlists" if key == "playlist" else key)
+        if key not in ("watch", "playlist"):
             self._settings.last_page = key
 
     def _toggle_settings(self):
@@ -173,9 +204,44 @@ class MainWindow(QMainWindow):
         self._enter_watch()
         self.watch_page.open_source_id(source_id)
 
-    def open_saved_video(self, video_id):
+    def open_saved_video(self, video_id, playlist_id=None):
+        """Abre um vídeo da biblioteca. Com `playlist_id`, a reprodução segue para o próximo item ao terminar."""
+        self._playlist_id = playlist_id
         self._enter_watch()
         self.watch_page.open_saved(video_id)
+        self._refresh_playlist_context(video_id)
+
+    def open_playlist(self, playlist_id):
+        self.playlist_page.show_playlist(playlist_id)
+        self.show_page("playlist")
+
+    def play_playlist(self, playlist_id, start_video_id=0):
+        """Reproduz a playlist na ordem escolhida, a partir do primeiro item ou de `start_video_id`."""
+        ids = self.org.playlist_video_ids(playlist_id)
+        if not ids:
+            return
+        self.open_saved_video(start_video_id if start_video_id in ids else ids[0], playlist_id)
+
+    def _refresh_playlist_context(self, video_id):
+        playlist = self.org.get_playlist(self._playlist_id) if self._playlist_id is not None else None
+        ids = self.org.playlist_video_ids(self._playlist_id) if playlist is not None else []
+        if playlist is not None and video_id in ids:
+            self.watch_page.set_playlist_context(playlist.name, ids.index(video_id) + 1, len(ids))
+        else:
+            self._playlist_id = None
+            self.watch_page.set_playlist_context(None)
+
+    def _on_playback_ended(self):
+        """Fim do vídeo dentro de uma playlist: segue para o próximo item (se houver)."""
+        video = self.watch_page.player.video
+        if self._playlist_id is None or video is None:
+            return
+        following = self.org.next_in_playlist(self._playlist_id, video.id)
+        if following is not None:
+            self.open_saved_video(following.id, self._playlist_id)
+        else:
+            self._playlist_id = None
+            self.watch_page.set_playlist_context(None)
 
     def _enter_watch(self):
         if self.current_page != "watch":
@@ -184,6 +250,55 @@ class MainWindow(QMainWindow):
 
     def _go_back(self):
         self.show_page(self._back_page if self._back_page in self.pages else DEFAULT_PAGE)
+
+    # -- busca e organização --------------------------------------------------------------------
+    def _apply_search(self):
+        """A busca da barra superior filtra a biblioteca (com debounce) e leva o usuário até ela."""
+        text = self.top_bar.search_input.text()
+        self.query_state.set_text(text)
+        if text.strip() and self.current_page != "library":
+            self.show_page("library")
+
+    def _sync_search_field(self):
+        field = self.top_bar.search_input
+        if field.text() != self.query_state.query.text:
+            field.blockSignals(True)
+            field.setText(self.query_state.query.text)
+            field.blockSignals(False)
+
+    def show_library_with(self, **filters):
+        """Abre a biblioteca já filtrada (ex.: por categoria ou playlist)."""
+        self.query_state.focus(**filters)
+        self.show_page("library")
+
+    def _prompt_category(self, existing=None):
+        return self._prompt_name(existing, "dialog.category_new", "dialog.category_edit", True,
+                                 self.org.create_category, self.org.update_category)
+
+    def _prompt_playlist(self, existing=None):
+        return self._prompt_name(existing, "dialog.playlist_new", "dialog.playlist_edit", False,
+                                 lambda name, desc, _color: self.org.create_playlist(name, desc),
+                                 lambda pid, name, desc, _color: self.org.update_playlist(pid, name, desc))
+
+    def _prompt_name(self, existing, new_key, edit_key, with_color, create, update):
+        """Diálogo de nome (e cor). Devolve o item criado/editado ou None se o usuário cancelou."""
+        result = {}
+
+        def submit(name, description, color):
+            if existing is None:
+                result["item"] = create(name, description, color)
+            else:
+                result["item"] = update(existing.id, name, description, color)
+
+        dialog = NameDialog(
+            self._tr, edit_key if existing else new_key, submit, with_color,
+            name=getattr(existing, "name", ""), description=getattr(existing, "description", ""),
+            color=getattr(existing, "color", None), parent=self,
+        )
+        return result.get("item") if dialog.exec() == NameDialog.Accepted else None
+
+    def _on_organized(self, kind):
+        self.top_bar.show_message(self._tr.t("bulk.categories_toast" if kind == "categories" else "bulk.playlist_toast"), False)
 
     def _ffmpeg_tools(self):
         """ffmpeg/ffprobe verificados (a checagem roda uma vez). Levanta MediaError se faltarem."""

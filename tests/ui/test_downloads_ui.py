@@ -184,8 +184,10 @@ def test_downloads_page_lists_orders_and_clears(qtbot, ctx):
     qtbot.waitUntil(lambda: ta.finished and tb.finished, timeout=30000)
     qtbot.waitUntil(lambda: page.clear_button.isVisible(), timeout=5000)
     assert not page.empty.isVisible() and len(page._rows) == 2
-    order = [page.list_layout.itemAt(i).widget().task.id for i in range(page.list_layout.count())]
-    assert order == [tb.id, ta.id]  # finalizadas: a mais recente primeiro
+    def order():
+        return [page.list_layout.itemAt(i).widget().task.id for i in range(page.list_layout.count())]
+
+    qtbot.waitUntil(lambda: order() == [tb.id, ta.id], timeout=5000)  # finalizadas: a mais recente primeiro
     page._rows[ta.id].buttons["remove"].click()
     assert len(page._rows) == 1
     page.clear_button.click()

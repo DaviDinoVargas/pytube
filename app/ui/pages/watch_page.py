@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -59,10 +60,12 @@ class WatchPage(Page):
     key = "watch"
     back_requested = Signal()
     message = Signal(str, bool)  # texto, é_erro
+    playback_ended = Signal()
 
-    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None):
+    def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None):
         super().__init__(translator)
         self._library = library
+        self._organize = organize
         self._downloads = downloads
         self._consent = consent
         self._streams = None  # None: ainda não carregadas
@@ -136,6 +139,7 @@ class WatchPage(Page):
         self.player.browser_requested.connect(self.open_in_browser)
         self.player.folder_requested.connect(self._open_local_folder)
         self.player.height_changed.connect(self.set_player_height)
+        self.player.playback_ended.connect(self.playback_ended)
         col.addWidget(self.player)
         self.title_label = QLabel()
         self.title_label.setObjectName("watchTitle")
@@ -155,10 +159,18 @@ class WatchPage(Page):
         self.browser_button.setCursor(Qt.PointingHandCursor)
         self.browser_button.clicked.connect(self.open_in_browser)
         actions.addWidget(self.save_button)
+        self.categories_button = self._organize_button("categories")
+        self.playlists_button = self._organize_button("playlists")
+        actions.addWidget(self.categories_button)
+        actions.addWidget(self.playlists_button)
         actions.addWidget(self.browser_button)
         actions.addStretch(1)
         col.addLayout(actions)
 
+        self.playlist_label = QLabel()
+        self.playlist_label.setObjectName("cardMeta")
+        self.playlist_label.hide()
+        col.addWidget(self.playlist_label)
         self.local_label = QLabel()
         self.local_label.setObjectName("statusOk")
         col.addWidget(self.local_label)
@@ -257,6 +269,34 @@ class WatchPage(Page):
         if path is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
+    def _organize_button(self, kind):
+        button = QToolButton()
+        button.setObjectName("playerMenuButton")
+        button.setPopupMode(QToolButton.InstantPopup)
+        button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        button.setCursor(Qt.PointingHandCursor)
+        menu = QMenu(button)
+        menu.aboutToShow.connect(lambda m=menu, k=kind: self._fill_organize_menu(m, k))
+        button.setMenu(menu)
+        return button
+
+    def _fill_organize_menu(self, menu, kind):
+        """Monta o menu na hora de abrir: categorias/playlists sempre atuais."""
+        menu.clear()
+        if self._organize is None or self._video is None:
+            return
+        builder = self._organize.categories_menu if kind == "categories" else self._organize.playlists_menu
+        sub = builder([self._video.id], menu)
+        for action in sub.actions():
+            menu.addAction(action)
+        menu._keep = sub  # as ações pertencem ao submenu: ele precisa continuar vivo
+
+    def set_playlist_context(self, name=None, index=0, total=0):
+        """Mostra 'Playlist X · 2 de 5' durante a reprodução sequencial; sem nome, esconde."""
+        if name:
+            self.playlist_label.setText(self._tr.t("watch.playlist_position", name=name, index=index, total=total))
+        self.playlist_label.setVisible(bool(name))
+
     # -- ciclo de vida ------------------------------------------------------------
     def open_source_id(self, source_id):
         """Abre um vídeo pelo id. Se já está na biblioteca, não consulta a rede."""
@@ -338,6 +378,8 @@ class WatchPage(Page):
         self.save_button.style().unpolish(self.save_button)
         self.save_button.style().polish(self.save_button)
         self.save_button.setEnabled(self._library.ready)
+        for button in (self.categories_button, self.playlists_button):
+            button.setEnabled(saved and self._organize is not None)
         local = ""
         if saved and video_state(self._video) == states.DOWNLOADED:
             local = t(
@@ -615,6 +657,8 @@ class WatchPage(Page):
         self.retry_button.setText(t("watch.retry"))
         self.error_browser_button.setText(t("watch.open_browser"))
         self.browser_button.setText(t("watch.open_browser"))
+        self.categories_button.setText(t("watch.categories") + " ▾")
+        self.playlists_button.setText(t("watch.playlists") + " ▾")
         self.player.retranslate()
         if self._info is not None:
             self._render()

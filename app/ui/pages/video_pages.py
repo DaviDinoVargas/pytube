@@ -1,7 +1,10 @@
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout
+import html
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.domain import states
+from app.domain.query import LibraryQuery
 from app.domain.states import video_state
 from app.ui.pages.base import EmptyState, Page
 from app.ui.widgets.video_card import VideoCard
@@ -16,9 +19,10 @@ class VideoPage(Page):
     video_opened = Signal(int)
     video_action = Signal(int, str)
 
-    def __init__(self, translator, library, tokens, can_download=lambda: False, download_status=lambda video_id: None):
+    def __init__(self, translator, library, tokens, can_download=lambda: False, download_status=lambda video_id: None, organize=None):
         super().__init__(translator)
         self._library = library
+        self._organize = organize
         self._download_status = download_status
         self._tokens = tokens
         self._can_download = can_download
@@ -40,6 +44,7 @@ class VideoPage(Page):
             video_state(video, self._download_status(video.id)),
             self._library.thumbnail_path(video),
             can_download=self._can_download(),
+            organize=self._organize,
         )
         card.open_requested.connect(self.video_opened)
         card.action_requested.connect(self.video_action)
@@ -94,13 +99,6 @@ class VideoPage(Page):
         return [c for g in self.findChildren(VideoGrid) for c in g.cards]
 
 
-class LibraryPage(VideoPage):
-    key = "library"
-
-    def videos(self):
-        return self._library.list_videos()
-
-
 class DownloadedPage(VideoPage):
     key = "downloaded"
 
@@ -114,6 +112,11 @@ class DownloadedPage(VideoPage):
 
 class HomePage(VideoPage):
     key = "home"
+    category_all_requested = Signal(int)
+
+    def __init__(self, *args, org=None, **kwargs):
+        self._org = org
+        super().__init__(*args, **kwargs)
 
     def videos(self):
         return self._library.list_videos()
@@ -128,13 +131,34 @@ class HomePage(VideoPage):
         if downloaded:
             sections.append(("home.section_downloaded", downloaded[:SECTION_LIMIT]))
         for key, items in sections:
-            box = QWidget()
-            column = QVBoxLayout(box)
-            column.setContentsMargins(0, 0, 0, 0)
-            column.setSpacing(10)
-            heading = QLabel(self._tr.t(key))
-            heading.setObjectName("sectionTitle")
-            column.addWidget(heading)
-            column.addWidget(self.make_grid(items))
-            self.body.addWidget(box)
+            self.body.addWidget(self._section(self._tr.t(key), items))
+        for category in (self._org.categories() if self._org is not None else []):
+            items = self._org.query(LibraryQuery(category_ids=frozenset({category.id})))
+            if items:  # categorias vazias não ocupam espaço
+                self.body.addWidget(self._section(category.name, items[:SECTION_LIMIT], category))
         self.body.addStretch(1)
+
+    def _section(self, title, items, category=None):
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(10)
+        head = QHBoxLayout()
+        heading = QLabel()
+        heading.setObjectName("sectionTitle")
+        if category is not None and category.color:
+            heading.setTextFormat(Qt.RichText)  # o ponto leva a cor da categoria; o nome é escapado
+            heading.setText(f'<span style="color:{category.color}">●</span> {html.escape(category.name)}')
+        else:
+            heading.setText(title)
+        head.addWidget(heading)
+        head.addStretch(1)
+        if category is not None:
+            more = QPushButton(self._tr.t("home.see_all"))
+            more.setObjectName("linkButton")
+            more.setCursor(Qt.PointingHandCursor)
+            more.clicked.connect(lambda _=False, cid=category.id: self.category_all_requested.emit(cid))
+            head.addWidget(more)
+        column.addLayout(head)
+        column.addWidget(self.make_grid(items))
+        return box

@@ -71,6 +71,7 @@ class PlayerWidget(QFrame):
     browser_requested = Signal()
     fullscreen_changed = Signal(bool)
     folder_requested = Signal()
+    playback_ended = Signal()  # o vídeo terminou (usado na reprodução sequencial de playlists)
 
     def __init__(self, translator, tokens, library, progress, settings, local_factory=LocalPlayer, online_factory=create_online_player):
         super().__init__()
@@ -351,6 +352,7 @@ class PlayerWidget(QFrame):
         if self._dur > 0:
             self._pos = self._dur
             self.save_progress()
+        self.playback_ended.emit()
 
     # ------------------------------------------------------------------------------------
     # comandos
