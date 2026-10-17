@@ -82,3 +82,30 @@ class SettingsService:
     @provider_order.setter
     def provider_order(self, names):
         self._s.setValue("providers/order", ",".join(names))
+
+    @property
+    def download_consent(self):
+        return str(self._s.value("downloads/consent", "false")).lower() == "true"
+
+    @download_consent.setter
+    def download_consent(self, value):
+        self._s.setValue("downloads/consent", bool(value))
+
+    @property
+    def download_concurrent(self):
+        try:
+            return min(4, max(1, int(self._s.value("downloads/concurrent", 2))))
+        except (TypeError, ValueError):
+            return 2
+
+    @download_concurrent.setter
+    def download_concurrent(self, value):
+        self._s.setValue("downloads/concurrent", int(value))
+
+    @property
+    def ffmpeg_path(self):
+        return str(self._s.value("tools/ffmpeg_path", "") or "")
+
+    @ffmpeg_path.setter
+    def ffmpeg_path(self, value):
+        self._s.setValue("tools/ffmpeg_path", value)
