@@ -12,6 +12,11 @@ class SettingsService:
         self._s = store or QSettings(APP_NAME, APP_NAME)
 
     @property
+    def location(self):
+        """Arquivo ou chave onde as preferências estão gravadas."""
+        return self._s.fileName()
+
+    @property
     def language(self):
         value = self._s.value("general/language", DEFAULT_LANGUAGE)
         return value if value in LANGUAGES else DEFAULT_LANGUAGE
