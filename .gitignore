@@ -3,3 +3,7 @@ ffmpeg/doc/
 **/LICENSE/
 **/README.txt/
 build/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
