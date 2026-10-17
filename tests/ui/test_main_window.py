@@ -10,15 +10,20 @@ from app.ui.widgets.sidebar import COLLAPSED_WIDTH, EXPANDED_WIDTH
 VID = "dQw4w9WgXcQ"
 
 
-def settings_dir(settings):
+def make(qtbot, settings):
+    """Janela sem rede e com a biblioteca já configurada em uma pasta temporária."""
     from pathlib import Path
 
-    return Path(settings.location).parent / "appdata"
+    from app.infrastructure.providers.chain import ProviderChain
+    from app.services.thumbnail_service import ThumbnailService
+    from tests.fakes import FakeProvider
 
-
-def make(qtbot, settings, tmp_path_factory=None):
-    storage = StorageManager(settings, tmp_path_factory or settings_dir(settings))
-    window = create_window(QApplication.instance(), settings, storage)
+    storage = StorageManager(settings, Path(settings.location).parent / "appdata")
+    if storage.status() != "ready":
+        storage.configure(Path(settings.location).parent / "lib", "folder", "sqlite")
+    window = create_window(
+        QApplication.instance(), settings, storage, ProviderChain([FakeProvider("fake")]), ThumbnailService(lambda u: b"")
+    )
     qtbot.addWidget(window)
     window.show()
     return window

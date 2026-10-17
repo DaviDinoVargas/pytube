@@ -146,7 +146,10 @@ def test_cancel_changes_nothing(qtbot, manager, tmp_path):
 
 
 def make_window(qtbot, settings, manager):
-    w = create_window(QApplication.instance(), settings, manager)
+    from app.infrastructure.providers.chain import ProviderChain
+    from tests.fakes import FakeProvider
+
+    w = create_window(QApplication.instance(), settings, manager, ProviderChain([FakeProvider("fake")]))
     qtbot.addWidget(w)
     w.show()
     return w

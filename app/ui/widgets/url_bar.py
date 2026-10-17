@@ -99,5 +99,5 @@ class TopBar(QFrame):
         if video_id is None:
             self.show_message(self._tr.t("topbar.invalid_url"), error=True)
             return
-        self.show_message(self._tr.t("topbar.url_ok"))
+        self.show_message("")
         self.video_requested.emit(video_id)

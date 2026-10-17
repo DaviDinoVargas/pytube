@@ -73,3 +73,12 @@ class SettingsService:
     @storage_format.setter
     def storage_format(self, value):
         self._s.setValue("storage/format", value)
+
+    @property
+    def provider_order(self):
+        raw = str(self._s.value("providers/order", "pytubefix,ytdlp"))
+        return tuple(n for n in raw.split(",") if n)
+
+    @provider_order.setter
+    def provider_order(self, names):
+        self._s.setValue("providers/order", ",".join(names))

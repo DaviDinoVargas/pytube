@@ -7,6 +7,9 @@ from PySide6.QtWidgets import QApplication
 
 from app import APP_NAME
 from app.i18n import Translator
+from app.infrastructure.providers.chain import ProviderChain
+from app.infrastructure.providers.pytubefix_provider import PytubefixProvider
+from app.infrastructure.providers.ytdlp_provider import YtdlpProvider
 from app.services.settings_service import SettingsService
 from app.services.storage_service import StorageManager
 from app.styles.theme_manager import ThemeManager
@@ -17,13 +20,18 @@ def default_app_data_dir():
     return Path(QStandardPaths.writableLocation(QStandardPaths.AppDataLocation))
 
 
-def create_window(app, settings=None, storage=None):
+def default_providers(settings):
+    return ProviderChain([PytubefixProvider(), YtdlpProvider()], order=settings.provider_order)
+
+
+def create_window(app, settings=None, storage=None, providers=None, thumbnails=None):
     settings = settings or SettingsService()
     storage = storage or StorageManager(settings, default_app_data_dir())
+    providers = providers or default_providers(settings)
     translator = Translator(settings.language)
     theme = ThemeManager(app, settings.theme)
     theme.apply()
-    return MainWindow(settings, translator, theme, storage)
+    return MainWindow(settings, translator, theme, storage, providers, thumbnails)
 
 
 def run():
@@ -34,4 +42,5 @@ def run():
     window.show()
     if not window.ensure_storage():
         return 0
+    window.start_background_checks()
     return app.exec()

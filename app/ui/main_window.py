@@ -1,19 +1,14 @@
 from PySide6.QtCore import QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from app import APP_NAME
+from app.services.library_service import LibraryService
 from app.styles.icons import icon
-from app.ui.pages.placeholder_pages import (
-    CategoriesPage,
-    ContinuePage,
-    DownloadedPage,
-    DownloadsPage,
-    HistoryPage,
-    HomePage,
-    LibraryPage,
-    PlaylistsPage,
-)
+from app.ui.pages.placeholder_pages import CategoriesPage, ContinuePage, DownloadsPage, HistoryPage, PlaylistsPage
+from app.ui.pages.video_pages import DownloadedPage, HomePage, LibraryPage
+from app.ui.pages.watch_page import WatchPage, watch_url
+from app.ui.workers import run_async
 from app.services.storage_service import STATUS_READY
 from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
@@ -24,10 +19,11 @@ DEFAULT_PAGE = "home"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings, translator, theme, storage):
+    def __init__(self, settings, translator, theme, storage, providers, thumbnails=None):
         super().__init__()
         self._settings = settings
         self._storage = storage
+        self.library = LibraryService(storage, providers, thumbnails)
         self._tr = translator
         self._theme = theme
         self.setWindowTitle(APP_NAME)
@@ -52,11 +48,12 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.pages = {}
+        library = self.library
         for page in (
-            HomePage(translator),
+            HomePage(translator, library, tokens),
             ContinuePage(translator),
-            LibraryPage(translator),
-            DownloadedPage(translator),
+            LibraryPage(translator, library, tokens),
+            DownloadedPage(translator, library, tokens),
             PlaylistsPage(translator),
             CategoriesPage(translator),
             HistoryPage(translator),
@@ -69,6 +66,15 @@ class MainWindow(QMainWindow):
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
+        self.watch_page = WatchPage(translator, library, tokens)
+        self.watch_page.back_requested.connect(self._go_back)
+        self.watch_page.message.connect(self.top_bar.show_message)
+        self._add_page(self.watch_page)
+        for page in self.pages.values():
+            if hasattr(page, "video_opened"):
+                page.video_opened.connect(self.open_saved_video)
+                page.video_action.connect(self._on_video_action)
+        library.changed.connect(self._on_library_changed)
         column.addWidget(self.stack, 1)
 
         # Rodapé com a engrenagem de configurações no canto inferior direito
@@ -91,6 +97,7 @@ class MainWindow(QMainWindow):
         self.sidebar.collapsed_changed.connect(lambda c: setattr(settings, "sidebar_collapsed", c))
         self.top_bar.video_requested.connect(self._on_video_requested)
         self._previous_page = DEFAULT_PAGE
+        self._back_page = DEFAULT_PAGE
 
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.top_bar.focus_search)
         QShortcut(QKeySequence("Ctrl+L"), self, activated=self.top_bar.focus_url)
@@ -113,12 +120,13 @@ class MainWindow(QMainWindow):
     def show_page(self, key):
         if key not in self.pages:
             return
-        if key != "settings":
+        if key not in ("settings", "watch"):
             self._previous_page = key
         self.stack.setCurrentWidget(self.pages[key])
         self.settings_button.setChecked(key == "settings")
         self.sidebar.select(key)
-        self._settings.last_page = key
+        if key != "watch":
+            self._settings.last_page = key
 
     def _toggle_settings(self):
         if self.current_page == "settings":
@@ -132,19 +140,70 @@ class MainWindow(QMainWindow):
             return True
         accepted = StorageDialog(self._tr, self._storage, first_run=True, parent=self).exec() == StorageDialog.Accepted
         self.settings_page.refresh_storage()
+        self.library.notify()
         return accepted
 
     def change_storage(self):
         if StorageDialog(self._tr, self._storage, first_run=False, parent=self).exec() == StorageDialog.Accepted:
             self.settings_page.refresh_storage()
+            self.library.notify()
 
     def _open_storage_folder(self):
         if self._storage.status() == STATUS_READY:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._storage.config.root)))
 
-    def _on_video_requested(self, video_id):
-        # A abertura do vídeo entra junto com a tela de reprodução
-        pass
+    def _on_video_requested(self, source_id):
+        self._enter_watch()
+        self.watch_page.open_source_id(source_id)
+
+    def open_saved_video(self, video_id):
+        self._enter_watch()
+        self.watch_page.open_saved(video_id)
+
+    def _enter_watch(self):
+        if self.current_page != "watch":
+            self._back_page = self.current_page
+        self.show_page("watch")
+
+    def _go_back(self):
+        self.show_page(self._back_page if self._back_page in self.pages else DEFAULT_PAGE)
+
+    def _on_library_changed(self):
+        for page in self.pages.values():
+            if hasattr(page, "mark_dirty"):
+                page.mark_dirty()
+
+    def _on_video_action(self, video_id, action):
+        video = self.library.get(video_id)
+        if video is None:
+            return
+        if action == "browser":
+            url = watch_url(video.source_id)
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+        elif action == "folder":
+            path = self.library.local_path(video)
+            if path is not None:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        elif action == "remove":
+            if video.local_status == "ok" and not self._confirm_remove():
+                return
+            self.library.remove(video_id)
+
+    def _confirm_remove(self):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle(self._tr.t("watch.confirm_remove_title"))
+        box.setText(self._tr.t("watch.confirm_remove_body"))
+        remove = box.addButton(self._tr.t("watch.remove"), QMessageBox.AcceptRole)
+        box.addButton(self._tr.t("storage.cancel"), QMessageBox.RejectRole)
+        box.exec()
+        return box.clickedButton() is remove
+
+    def start_background_checks(self):
+        """Confere em segundo plano se os arquivos baixados ainda existem."""
+        if self.library.ready:
+            run_async(self.library.validate_all)
 
     def _on_language(self, code):
         self._settings.language = code
@@ -161,7 +220,8 @@ class MainWindow(QMainWindow):
         self.sidebar.set_tokens(tokens)
         self.top_bar.set_tokens(tokens)
         self.settings_button.setIcon(icon("settings", tokens["text_secondary"]))
-        self.settings_page.set_tokens(tokens)
+        for page in self.pages.values():
+            page.set_tokens(tokens)
 
     def retranslate(self):
         label = self._tr.t("nav.settings")
