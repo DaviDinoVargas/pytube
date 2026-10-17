@@ -140,3 +140,43 @@ class SettingsService:
     @library_view.setter
     def library_view(self, value):
         self._s.setValue("library/view", value)
+
+    @property
+    def default_rate(self):
+        try:
+            rate = float(self._s.value("player/rate", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
+        return rate if rate in (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0) else 1.0
+
+    @default_rate.setter
+    def default_rate(self, value):
+        self._s.setValue("player/rate", float(value))
+
+    def _flag(self, key, default):
+        raw = self._s.value(key, default)
+        return str(raw).lower() == "true"
+
+    @property
+    def resume_enabled(self):
+        return self._flag("player/resume", True)
+
+    @resume_enabled.setter
+    def resume_enabled(self, value):
+        self._s.setValue("player/resume", bool(value))
+
+    @property
+    def autoplay_next(self):
+        return self._flag("player/autoplay_next", True)
+
+    @autoplay_next.setter
+    def autoplay_next(self, value):
+        self._s.setValue("player/autoplay_next", bool(value))
+
+    @property
+    def restore_last_page(self):
+        return self._flag("ui/restore_last_page", True)
+
+    @restore_last_page.setter
+    def restore_last_page(self, value):
+        self._s.setValue("ui/restore_last_page", bool(value))

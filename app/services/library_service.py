@@ -27,6 +27,14 @@ class LibraryService(QObject):
         self._providers = providers
         self._thumbs = thumbnails or ThumbnailService()
 
+    @property
+    def thumbnails(self):
+        return self._thumbs
+
+    @property
+    def providers(self):
+        return self._providers
+
     # -- acesso -----------------------------------------------------------
     @property
     def ready(self):
