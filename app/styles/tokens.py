@@ -20,6 +20,7 @@ def _theme(scheme, **tokens):
     tokens.setdefault("sidebar_bg", tokens["surface"])
     tokens.setdefault("topbar_bg", tokens["surface"])
     tokens.setdefault("input_bg", tokens["background"])
+    tokens.setdefault("progress", tokens["accent"])  # cor da barra de progresso do player
     tokens.setdefault("radius", _DEFAULT_RADIUS)
     tokens["scheme"] = scheme
     return tokens

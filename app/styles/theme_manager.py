@@ -116,10 +116,35 @@ QProgressBar::chunk {{ background: {t['accent']}; border-radius: 4px; }}
 QProgressBar[state="done"]::chunk {{ background: {t['success']}; }}
 QProgressBar[state="failed"]::chunk {{ background: {t['error']}; }}
 
+QFrame#playerWidget {{ background: #000000; border-radius: 14px; }}
+QStackedWidget#playerStack {{ background: #000000; border-top-left-radius: 14px; border-top-right-radius: 14px; }}
+QFrame#playerMessage {{ background: #000000; }}
+QLabel#playerMessageText {{ color: #FFFFFF; font-size: 14px; background: transparent; }}
+QFrame#playerControls {{ background: {t['surface_elevated']}; border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }}
+QFrame#playerNotice {{ background: {t['accent_soft']}; }}
+QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
+QLabel#sourceChip {{
+    color: {t['text_secondary']}; border: 1px solid {t['border']}; border-radius: 9px; padding: 1px 8px; font-size: 11px; font-weight: 600;
+}}
+QLabel#sourceChip[source="local"] {{ color: {t['text_on_accent']}; background: {t['accent']}; border-color: {t['accent']}; }}
+QToolButton#playerButton, QToolButton#playerMenuButton {{
+    background: transparent; border: none; border-radius: {r['sm']}px; padding: 5px; color: {t['text_primary']}; font-weight: 600;
+}}
+QToolButton#playerMenuButton {{ padding: 5px 9px; }}
+QToolButton#playerButton:hover, QToolButton#playerMenuButton:hover {{ background: {t['surface_hover']}; }}
+QToolButton#playerButton:focus, QToolButton#playerMenuButton:focus {{ border: 2px solid {t['accent']}; padding: 3px; }}
+QToolButton#playerMenuButton::menu-indicator {{ image: none; width: 0px; }}
+QSlider::groove:horizontal {{ height: 6px; background: {t['border']}; border-radius: 3px; }}
+QSlider::sub-page:horizontal {{ background: {t['progress']}; border-radius: 3px; }}
+QSlider::handle:horizontal {{ background: {t['text_primary']}; width: 12px; height: 12px; margin: -3px 0; border-radius: 6px; }}
+QSlider::handle:horizontal:hover {{ background: {t['progress']}; }}
+QMenu {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; border-radius: {r['sm']}px; padding: 4px; }}
+QMenu::item {{ padding: 6px 18px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {t['accent_soft']}; }}
+QMenu::item:disabled {{ color: {t['text_secondary']}; }}
+
 QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
 QLabel#watchTitle {{ font-size: 21px; font-weight: 700; }}
-QLabel#playerMessage {{ color: #FFFFFF; font-size: 14px; max-width: 520px; }}
-QFrame#playerArea {{ background: #000000; border-radius: 14px; }}
 QToolButton#textButton {{
     background: transparent; border: none; color: {t['text_secondary']}; padding: 4px 8px; border-radius: {r['sm']}px;
 }}
