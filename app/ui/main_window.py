@@ -1,15 +1,24 @@
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from app import APP_NAME
 from app.infrastructure.media.ffmpeg import MediaError, bundled_root, locate
 from app.services.download_service import DownloadManager
 from app.domain.history import SMART_PLAYLISTS
+from app.logging_setup import get_logger, setup_logging
+from app.services.backup_service import BackupService
+from app.services.diagnostics_service import build_report
 from app.services.library_service import LibraryService
+from app.services.maintenance_service import MaintenanceService
+from app.services.provider_service import update_providers
 from app.services.organization_service import OrganizationService
 from app.services.progress_service import ProgressService
+from app.ui.dialogs.backup_dialog import BackupDialog
 from app.ui.dialogs.name_dialog import NameDialog
+from app.ui.dialogs.space_dialog import SpaceDialog
+from app.ui.errors import describe_error
+from app.ui.widgets.settings_cards import DownloadsCard, MaintenanceCard, PlaybackCard, ProvidersCard
 from app.ui.organize_menus import OrganizeMenus
 from app.ui.player import shortcuts
 from app.ui.query_state import QueryState
@@ -32,6 +41,8 @@ DEFAULT_PAGE = "home"
 
 
 class MainWindow(QMainWindow):
+    maintenance_progress = Signal(int, int)  # emitido pela thread de trabalho; entregue na da interface
+
     def __init__(self, settings, translator, theme, storage, providers, thumbnails=None, tools_getter=None, player_options=None):
         super().__init__()
         self._settings = settings
@@ -39,6 +50,9 @@ class MainWindow(QMainWindow):
         self.library = LibraryService(storage, providers, thumbnails)
         self.progress = ProgressService(self.library)
         self.org = OrganizationService(self.library)
+        self.providers = providers
+        self.maintenance = MaintenanceService(self.library, storage, self.library.thumbnails)
+        self.backups = BackupService(self.library, storage)
         self.query_state = QueryState(settings)
         self.organize = OrganizeMenus(translator, self.org, self._prompt_category, self._prompt_playlist, self._on_organized)
         self._tools = None
@@ -89,9 +103,10 @@ class MainWindow(QMainWindow):
             DownloadsPage(translator, self.downloads, library, tokens),
         ):
             self._add_page(page)
-        self.settings_page = SettingsPage(translator, settings.language, settings.theme, storage)
+        self.settings_page = SettingsPage(translator, settings.language, settings.theme, storage, settings)
         self.settings_page.language_selected.connect(self._on_language)
         self.settings_page.theme_selected.connect(self._on_theme)
+        self._build_settings_sections()
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
@@ -162,7 +177,7 @@ class MainWindow(QMainWindow):
         theme.theme_changed.connect(self._apply_tokens)
         self._apply_tokens()
         self.retranslate()
-        last = settings.last_page
+        last = settings.last_page if settings.restore_last_page else DEFAULT_PAGE
         self.show_page(last if last in self.pages else DEFAULT_PAGE)
 
     def _add_page(self, page):
@@ -196,12 +211,14 @@ class MainWindow(QMainWindow):
             return True
         accepted = StorageDialog(self._tr, self._storage, first_run=True, parent=self).exec() == StorageDialog.Accepted
         self.settings_page.refresh_storage()
+        self._after_storage_ready()
         self.library.notify()
         return accepted
 
     def change_storage(self):
         if StorageDialog(self._tr, self._storage, first_run=False, parent=self).exec() == StorageDialog.Accepted:
             self.settings_page.refresh_storage()
+            self._after_storage_ready()
             self.library.notify()
 
     def _open_storage_folder(self):
@@ -252,7 +269,7 @@ class MainWindow(QMainWindow):
     def _on_playback_ended(self):
         """Fim do vídeo dentro de uma playlist: segue para o próximo item (se houver)."""
         video = self.watch_page.player.video
-        if self._playlist_id is None or video is None:
+        if self._playlist_id is None or video is None or not self._settings.autoplay_next:
             return
         following = self.org.next_in_playlist(self._playlist_id, video.id)
         if following is not None:
@@ -268,6 +285,128 @@ class MainWindow(QMainWindow):
 
     def _go_back(self):
         self.show_page(self._back_page if self._back_page in self.pages else DEFAULT_PAGE)
+
+    # -- seções de configurações: reprodução, downloads, provedores, manutenção ---------------------
+    def _build_settings_sections(self):
+        s, tr = self._settings, self._tr
+        self.playback_card = PlaybackCard(tr, s)
+        self.downloads_card = DownloadsCard(tr, s)
+        self.providers_card = ProvidersCard(tr, s)
+        self.maintenance_card = MaintenanceCard(tr)
+        for card in (self.playback_card, self.downloads_card, self.providers_card, self.maintenance_card):
+            self.settings_page.add_section(card)
+        self.downloads_card.concurrency_changed.connect(self.downloads.set_max_concurrent)
+        self.downloads_card.ffmpeg_browse_requested.connect(self._browse_ffmpeg)
+        self.downloads_card.ffmpeg_path_changed.connect(self._set_ffmpeg_path)
+        self.providers_card.order_changed.connect(lambda order: setattr(self.providers, "order", order))
+        self.providers_card.update_requested.connect(self._update_providers)
+        m = self.maintenance_card
+        m.manage_space_requested.connect(self._open_space_dialog)
+        m.backups_requested.connect(self._open_backup_dialog)
+        m.verify_requested.connect(self._verify_files)
+        m.refresh_requested.connect(self._refresh_metadata)
+        m.clear_thumbs_requested.connect(self._clear_thumbnails)
+        m.diagnostics_requested.connect(self._export_diagnostics)
+        m.logs_requested.connect(self._open_logs)
+        self.maintenance_progress.connect(m.show_progress)
+
+    def _browse_ffmpeg(self):
+        folder = QFileDialog.getExistingDirectory(self, self._tr.t("settings.ffmpeg_choose"), "")
+        if folder:
+            self._set_ffmpeg_path(folder)
+
+    def _set_ffmpeg_path(self, path):
+        self._settings.ffmpeg_path = path
+        self._tools = None  # a próxima verificação usa o novo caminho
+        self.refresh_ffmpeg_status()
+
+    def refresh_ffmpeg_status(self):
+        """Mostra a versão do ffmpeg em uso (a checagem roda em segundo plano) ou o motivo de não funcionar."""
+        def check():
+            return self._ffmpeg_tools()
+
+        def done(tools):
+            self.downloads_card.set_ffmpeg_status(self._tr.t("settings.ffmpeg_ok", version=tools.version_text.replace("ffmpeg version ", "")[:60]), True)
+
+        def failed(exc):
+            self.downloads_card.set_ffmpeg_status(describe_error(self._tr, getattr(exc, "code", "ffmpeg_missing")), False)
+
+        run_async(check, done, failed)
+
+    def _update_providers(self):
+        self.providers_card.set_busy(True)
+        run_async(update_providers, self._providers_updated, lambda exc: self._providers_updated(None))
+
+    def _providers_updated(self, result):
+        t = self._tr.t
+        self.providers_card.set_busy(False)
+        if result is None:
+            self.providers_card.show_result(t("settings.provider_update_failed"), False)
+        elif result.ok:
+            self.providers_card.show_result(t("settings.provider_update_ok"), True)
+        else:
+            key = {"frozen": "settings.provider_update_frozen", "timeout": "settings.provider_update_timeout"}.get(result.code, "settings.provider_update_failed")
+            self.providers_card.show_result(t(key), False)
+        self.providers_card.refresh_versions()
+
+    def _need_library(self):
+        if not self.library.ready:
+            self.maintenance_card.show_status(self._tr.t("maint.no_storage"), False)
+            return False
+        return True
+
+    def _open_space_dialog(self):
+        if self._need_library():
+            SpaceDialog(self._tr, self.maintenance, self.library, self._ffmpeg_tools, self.open_saved_video, self).exec()
+
+    def _open_backup_dialog(self):
+        if self._need_library():
+            BackupDialog(self._tr, self.backups, self).exec()
+
+    def _verify_files(self):
+        if not self._need_library():
+            return
+        run_async(self.maintenance.verify_all, lambda c: self.maintenance_card.show_status(
+            self._tr.t("maint.verified", downloaded=c["downloaded"], problems=c["missing"] + c["invalid"]), True),
+            lambda exc: self.maintenance_card.show_status(describe_error(self._tr, getattr(exc, "code", "")), False))
+
+    def _refresh_metadata(self):
+        if not self._need_library():
+            return
+        progress = self.maintenance_progress.emit
+        run_async(lambda: self.maintenance.refresh_metadata(progress=progress), lambda r: self.maintenance_card.show_status(
+            self._tr.t("maint.refreshed", updated=r.updated, failed=len(r.failed)), not r.failed),
+            lambda exc: self.maintenance_card.show_status(describe_error(self._tr, getattr(exc, "code", "")), False))
+
+    def _clear_thumbnails(self):
+        if self._need_library():
+            count, size = self.maintenance.clear_thumbnail_cache()
+            from app.services.storage_service import format_bytes
+
+            self.maintenance_card.show_status(self._tr.t("maint.thumbs_cleared", count=count, size=format_bytes(size)), True)
+
+    def _export_diagnostics(self):
+        target, _ = QFileDialog.getSaveFileName(self, self._tr.t("settings.diagnostics"), "dinotube-diagnostico.txt", "Texto (*.txt)")
+        if not target:
+            return
+        try:
+            tools = self._ffmpeg_tools()
+        except Exception:
+            tools = None
+        from pathlib import Path
+
+        Path(target).write_text(build_report(self._settings, self._storage, self.library, tools, self.providers), encoding="utf-8")
+        self.maintenance_card.show_status(self._tr.t("maint.diagnostics_saved", name=Path(target).name), True)
+
+    def _open_logs(self):
+        if self._need_library():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._storage.layout.logs)))
+
+    def _after_storage_ready(self):
+        """Com a biblioteca configurada: logs na pasta dela e informações de ferramentas atualizadas."""
+        if self._storage.status() == STATUS_READY:
+            setup_logging(self._storage.layout.logs)
+            get_logger("app").info("Biblioteca em uso: modo %s", self._storage.config.mode)
 
     # -- busca e organização --------------------------------------------------------------------
     def _apply_search(self):
@@ -410,8 +549,11 @@ class MainWindow(QMainWindow):
     def start_background_checks(self):
         """Confere em segundo plano se os arquivos baixados ainda existem."""
         if self.library.ready:
+            self._after_storage_ready()
             self.downloads.cleanup_orphans()
             run_async(self.library.validate_all)
+            run_async(self.backups.auto_backup_if_due)  # no máximo um backup automático por dia
+        self.refresh_ffmpeg_status()
 
     def _on_language(self, code):
         self._settings.language = code

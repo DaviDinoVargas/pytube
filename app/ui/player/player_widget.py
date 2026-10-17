@@ -182,7 +182,7 @@ class PlayerWidget(QFrame):
     def _resume_start(self):
         self.notice.hide()
         video = self._video
-        if video is None or not self._library.ready:
+        if video is None or not self._library.ready or not self._settings.resume_enabled:
             return 0.0
         start = self._progress.resume_position(video.id, video.duration)
         if start > 0:
@@ -313,6 +313,8 @@ class PlayerWidget(QFrame):
         if backend is not self._backend:
             return
         backend.set_volume(self._settings.player_volume)
+        if self._settings.default_rate != 1.0:
+            backend.set_rate(self._settings.default_rate)
         self.stack.setCurrentWidget(backend)
 
     def _on_state(self, backend, playing):

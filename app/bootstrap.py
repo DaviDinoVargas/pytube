@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 from app import APP_NAME
 from app.i18n import Translator
+from app.logging_setup import install_excepthook
 from app.infrastructure.providers.chain import ProviderChain
 from app.infrastructure.providers.pytubefix_provider import PytubefixProvider
 from app.infrastructure.providers.ytdlp_provider import YtdlpProvider
@@ -38,6 +39,7 @@ def run():
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(APP_NAME)
+    install_excepthook()
     window = create_window(app)
     window.show()
     if not window.ensure_storage():
