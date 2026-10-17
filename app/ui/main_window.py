@@ -1,5 +1,5 @@
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
 from app import APP_NAME
@@ -14,6 +14,8 @@ from app.ui.pages.placeholder_pages import (
     LibraryPage,
     PlaylistsPage,
 )
+from app.services.storage_service import STATUS_READY
+from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
 from app.ui.widgets.sidebar import Sidebar
 from app.ui.widgets.url_bar import TopBar
@@ -22,9 +24,10 @@ DEFAULT_PAGE = "home"
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings, translator, theme):
+    def __init__(self, settings, translator, theme, storage):
         super().__init__()
         self._settings = settings
+        self._storage = storage
         self._tr = translator
         self._theme = theme
         self.setWindowTitle(APP_NAME)
@@ -60,9 +63,11 @@ class MainWindow(QMainWindow):
             DownloadsPage(translator),
         ):
             self._add_page(page)
-        self.settings_page = SettingsPage(translator, settings.language, settings.theme)
+        self.settings_page = SettingsPage(translator, settings.language, settings.theme, storage)
         self.settings_page.language_selected.connect(self._on_language)
         self.settings_page.theme_selected.connect(self._on_theme)
+        self.settings_page.change_storage_requested.connect(self.change_storage)
+        self.settings_page.open_storage_requested.connect(self._open_storage_folder)
         self._add_page(self.settings_page)
         column.addWidget(self.stack, 1)
 
@@ -120,6 +125,22 @@ class MainWindow(QMainWindow):
             self.show_page(self._previous_page)
         else:
             self.show_page("settings")
+
+    def ensure_storage(self):
+        """Garante uma pasta de biblioteca válida. No primeiro uso o diálogo só termina salvando ou saindo."""
+        if self._storage.status() == STATUS_READY:
+            return True
+        accepted = StorageDialog(self._tr, self._storage, first_run=True, parent=self).exec() == StorageDialog.Accepted
+        self.settings_page.refresh_storage()
+        return accepted
+
+    def change_storage(self):
+        if StorageDialog(self._tr, self._storage, first_run=False, parent=self).exec() == StorageDialog.Accepted:
+            self.settings_page.refresh_storage()
+
+    def _open_storage_folder(self):
+        if self._storage.status() == STATUS_READY:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._storage.config.root)))
 
     def _on_video_requested(self, video_id):
         # A abertura do vídeo entra junto com a tela de reprodução

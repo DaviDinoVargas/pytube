@@ -1,7 +1,19 @@
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QButtonGroup, QComboBox, QFormLayout, QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QButtonGroup,
+    QComboBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.i18n import LANGUAGES
+from app.services.storage_service import STATUS_READY, STATUS_ROOT_MISSING, STATUS_UNCONFIGURED, format_bytes
 from app.styles.tokens import THEME_CHOICES
 from app.ui.pages.base import Page
 from app.ui.widgets.theme_swatch import ThemeSwatch
@@ -13,9 +25,12 @@ class SettingsPage(Page):
     key = "settings"
     language_selected = Signal(str)
     theme_selected = Signal(str)
+    change_storage_requested = Signal()
+    open_storage_requested = Signal()
 
-    def __init__(self, translator, language, theme):
+    def __init__(self, translator, language, theme, storage=None):
         super().__init__(translator)
+        self._storage = storage
         self.group_title = QLabel()
         self.group_title.setObjectName("groupTitle")
 
@@ -66,10 +81,80 @@ class SettingsPage(Page):
         appearance.layout().addWidget(self.theme_hint)
         appearance.layout().addWidget(swatches)
 
+        storage_card = self._build_storage_card()
+
         self.body.addWidget(general)
+        self.body.addWidget(storage_card)
         self.body.addWidget(appearance)
         self.body.addStretch(1)
         self.retranslate()
+
+    def _build_storage_card(self):
+        card = self._card()
+        self.storage_title = QLabel()
+        self.storage_title.setObjectName("groupTitle")
+        card.layout().addWidget(self.storage_title)
+        form = QFormLayout()
+        form.setHorizontalSpacing(24)
+        form.setVerticalSpacing(10)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        self.storage_rows = {}
+        for key in ("path", "mode", "format", "free", "library", "files"):
+            name = QLabel()
+            name.setObjectName("fieldLabel")
+            value = QLabel()
+            value.setWordWrap(True)
+            value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            form.addRow(name, value)
+            self.storage_rows[key] = (name, value)
+        card.layout().addLayout(form)
+        self.storage_warning = QLabel()
+        self.storage_warning.setObjectName("statusError")
+        self.storage_warning.setWordWrap(True)
+        card.layout().addWidget(self.storage_warning)
+        buttons = QHBoxLayout()
+        self.open_folder_button = QPushButton()
+        self.open_folder_button.setObjectName("secondary")
+        self.open_folder_button.clicked.connect(self.open_storage_requested)
+        self.change_storage_button = QPushButton()
+        self.change_storage_button.setObjectName("secondary")
+        self.change_storage_button.clicked.connect(self.change_storage_requested)
+        for button in (self.open_folder_button, self.change_storage_button):
+            button.setCursor(Qt.PointingHandCursor)
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        card.layout().addLayout(buttons)
+        return card
+
+    def refresh_storage(self):
+        """Atualiza o cartão de armazenamento com o estado atual do gerenciador."""
+        if self._storage is None:
+            return
+        t = self._tr.t
+        status = self._storage.status()
+        values = {key: "—" for key in self.storage_rows}
+        self.storage_warning.setText("")
+        if status == STATUS_UNCONFIGURED:
+            values["path"] = t("settings.storage_unset")
+        else:
+            cfg = self._storage.config
+            values["path"] = str(cfg.root)
+            values["mode"] = t(f"storage.mode_short_{cfg.mode}")
+            values["format"] = t(f"storage.format_short_{cfg.format}") if cfg.mode == "folder" else t("storage.format_short_sqlite")
+            if status == STATUS_ROOT_MISSING:
+                self.storage_warning.setText(t("settings.storage_missing"))
+            elif status == STATUS_READY:
+                usage = self._storage.usage()
+                counts = self._storage.store.counts()
+                values["free"] = f"{format_bytes(usage['free'])} / {format_bytes(usage['total'])}"
+                values["library"] = t(
+                    "storage.library_summary", videos=counts["videos"], categories=counts["categories"], playlists=counts["playlists"]
+                )
+                values["files"] = t("storage.files_summary", count=usage["video_files"], size=format_bytes(usage["videos_bytes"]))
+        for key, (_name, label) in self.storage_rows.items():
+            label.setText(values[key])
+        self.storage_warning.setVisible(bool(self.storage_warning.text()))
+        self.open_folder_button.setEnabled(status == STATUS_READY)
 
     @staticmethod
     def _card():
@@ -99,3 +184,9 @@ class SettingsPage(Page):
         self.theme_hint.setText(t("settings.theme_hint"))
         for name, swatch in self.theme_buttons.items():
             swatch.set_label(t(f"theme.{name}"))
+        self.storage_title.setText(t("settings.group_storage").upper())
+        for key, (name, _value) in self.storage_rows.items():
+            name.setText(t(f"settings.storage_{key}"))
+        self.open_folder_button.setText(t("settings.storage_open"))
+        self.change_storage_button.setText(t("settings.storage_change"))
+        self.refresh_storage()

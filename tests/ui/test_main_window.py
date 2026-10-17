@@ -3,14 +3,22 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
 from app.bootstrap import create_window
+from app.services.storage_service import StorageManager
 from app.styles.tokens import THEME_CHOICES, THEMES
 from app.ui.widgets.sidebar import COLLAPSED_WIDTH, EXPANDED_WIDTH
 
 VID = "dQw4w9WgXcQ"
 
 
-def make(qtbot, settings):
-    window = create_window(QApplication.instance(), settings)
+def settings_dir(settings):
+    from pathlib import Path
+
+    return Path(settings.location).parent / "appdata"
+
+
+def make(qtbot, settings, tmp_path_factory=None):
+    storage = StorageManager(settings, tmp_path_factory or settings_dir(settings))
+    window = create_window(QApplication.instance(), settings, storage)
     qtbot.addWidget(window)
     window.show()
     return window
