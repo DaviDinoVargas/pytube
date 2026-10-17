@@ -44,3 +44,27 @@ class SettingsService:
     @last_page.setter
     def last_page(self, value):
         self._s.setValue("ui/last_page", value)
+
+    @property
+    def storage_root(self):
+        return str(self._s.value("storage/root", "") or "")
+
+    @storage_root.setter
+    def storage_root(self, value):
+        self._s.setValue("storage/root", value)
+
+    @property
+    def storage_mode(self):
+        return str(self._s.value("storage/mode", "folder"))
+
+    @storage_mode.setter
+    def storage_mode(self, value):
+        self._s.setValue("storage/mode", value)
+
+    @property
+    def storage_format(self):
+        return str(self._s.value("storage/format", "sqlite"))
+
+    @storage_format.setter
+    def storage_format(self, value):
+        self._s.setValue("storage/format", value)
