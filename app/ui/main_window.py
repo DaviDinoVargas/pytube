@@ -114,6 +114,8 @@ class MainWindow(QMainWindow):
             translator, library, tokens, self.downloads, self._ask_download_consent, self.progress, settings, player_options, self.organize
         )
         self.watch_page.playback_ended.connect(self._on_playback_ended)
+        self.watch_page.player.mini_changed.connect(self._on_mini_changed)
+        self.watch_page.player.expand_requested.connect(self._enter_watch)
         self.playlist_page = PlaylistDetailPage(translator, self.org, library, tokens)
         self._add_page(self.playlist_page)
         self._playlist_id = None
@@ -272,13 +274,21 @@ class MainWindow(QMainWindow):
         if self._playlist_id is None or video is None or not self._settings.autoplay_next:
             return
         following = self.org.next_in_playlist(self._playlist_id, video.id)
-        if following is not None:
+        if following is not None and self.watch_page.player.is_mini:
+            self.watch_page.open_saved(following.id)  # no mini player segue a playlist sem tirar o usuário da página atual
+            self._refresh_playlist_context(following.id)
+        elif following is not None:
             self.open_saved_video(following.id, self._playlist_id)
         else:
             self._playlist_id = None
             self.watch_page.set_playlist_context(None)
 
+    def _on_mini_changed(self, mini):
+        if mini and self.current_page == "watch":
+            self._go_back()
+
     def _enter_watch(self):
+        self.watch_page.player.exit_mini()
         if self.current_page != "watch":
             self._back_page = self.current_page
         self.show_page("watch")
