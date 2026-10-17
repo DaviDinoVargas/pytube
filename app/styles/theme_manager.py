@@ -48,6 +48,7 @@ QToolButton#navItem:focus {{ border: 2px solid {t['accent']}; padding: 7px 10px;
 QToolButton#iconButton {{
     background: transparent; border: none; border-radius: {r['sm']}px; padding: 6px;
 }}
+QToolButton#iconButton::menu-indicator {{ image: none; width: 0px; }}
 QToolButton#iconButton:hover {{ background: {t['surface_hover']}; }}
 QToolButton#iconButton:checked {{ background: {t['accent_soft']}; }}
 QToolButton#iconButton:focus {{ border: 2px solid {t['accent']}; padding: 4px; }}
@@ -84,6 +85,42 @@ QFrame#card {{ background: {t['surface']}; border: 1px solid {t['border']}; bord
 QFrame#separator {{ background: {t['border']}; max-height: 1px; min-height: 1px; border: none; }}
 
 QDialog {{ background: {t['surface']}; }}
+
+QFrame#videoCard {{
+    background: {t['surface']}; border: 2px solid {t['border']}; border-radius: {r['md']}px;
+}}
+QFrame#videoCard:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#videoCard:focus {{ border: 2px solid {t['text_primary']}; }}
+QFrame#videoCard[state="downloaded"] {{ border: 2px solid {t['accent']}; background: {t['accent_soft']}; }}
+QFrame#videoCard[state="missing"], QFrame#videoCard[state="invalid"] {{ border: 2px solid {t['warning']}; }}
+QFrame#videoCard[state="failed"] {{ border: 2px solid {t['error']}; }}
+QFrame#videoCard QLabel {{ background: transparent; }}
+QFrame#videoCard QWidget {{ background: transparent; }}
+QLabel#cardTitle {{ font-weight: 600; font-size: 14px; }}
+QLabel#cardMeta {{ color: {t['text_secondary']}; font-size: 12px; }}
+QLabel#badge {{
+    background: rgba(0, 0, 0, 190); color: #FFFFFF; border-radius: 6px; padding: 2px 6px;
+    font-size: 12px; font-weight: 600;
+}}
+QFrame#stateBadge {{ border-radius: 9px; background: rgba(0, 0, 0, 190); }}
+QFrame#stateBadge QLabel {{ color: #FFFFFF; font-size: 12px; font-weight: 700; background: transparent; }}
+QFrame#stateBadge[state="downloaded"] {{ background: {t['accent']}; }}
+QFrame#stateBadge[state="downloaded"] QLabel {{ color: {t['text_on_accent']}; }}
+QFrame#stateBadge[state="missing"], QFrame#stateBadge[state="invalid"] {{ background: {t['warning']}; }}
+QFrame#stateBadge[state="failed"] {{ background: {t['error']}; }}
+QFrame#stateBadge[state="missing"] QLabel, QFrame#stateBadge[state="invalid"] QLabel,
+QFrame#stateBadge[state="failed"] QLabel {{ color: #1B1B1B; }}
+
+QLabel#sectionTitle {{ font-size: 17px; font-weight: 700; }}
+QLabel#watchTitle {{ font-size: 21px; font-weight: 700; }}
+QLabel#playerMessage {{ color: #FFFFFF; font-size: 14px; max-width: 520px; }}
+QFrame#playerArea {{ background: #000000; border-radius: 14px; }}
+QToolButton#textButton {{
+    background: transparent; border: none; color: {t['text_secondary']}; padding: 4px 8px; border-radius: {r['sm']}px;
+}}
+QToolButton#textButton:hover {{ background: {t['surface_hover']}; color: {t['text_primary']}; }}
+QPushButton#linkButton {{ background: transparent; border: none; color: {t['accent']}; font-weight: 600; padding: 2px 0; }}
+QPushButton#linkButton:hover {{ color: {t['accent_hover']}; }}
 QPushButton#secondary {{
     background: transparent; color: {t['text_primary']}; border: 1px solid {t['border']};
     border-radius: {r['sm']}px; padding: 8px 16px; font-weight: 500;
