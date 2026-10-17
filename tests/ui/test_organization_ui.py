@@ -290,7 +290,7 @@ def test_category_dialog_rejects_duplicates_and_keeps_open(w, monkeypatch):
         self.name_input.setText("estudos")
         self._save()
         seen["error"] = self.error_label.text()
-        seen["visible"] = self.error_label.isVisible()
+        seen["visible"] = not self.error_label.isHidden()
         return self.result()
 
     monkeypatch.setattr(NameDialog, "exec", fake_exec)
