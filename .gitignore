@@ -1,7 +1,5 @@
 videos
-ffmpeg/doc/
-**/LICENSE/
-**/README.txt/
+third_party/ffmpeg/doc/
 build/
 __pycache__/
 *.pyc
