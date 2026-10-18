@@ -23,6 +23,9 @@ class _Job(QObject):
                     self._on_error(error)
             elif self._on_done:
                 self._on_done(result)
+        except RuntimeError as exc:
+            if "already deleted" not in str(exc):  # a janela fechou antes de a tarefa terminar: não há mais onde mostrar
+                raise
         finally:
             self.deleteLater()
 

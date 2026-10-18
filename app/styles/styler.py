@@ -1,8 +1,7 @@
 """Ajustes de estilo que o QSS não faz (o Qt ignora `text-transform`, `letter-spacing` e `box-shadow`): maiúsculas e espaçamento
-dos títulos, e sombras/brilho dos cartões. Um filtro de eventos aplica tudo quando cada widget é "polido", então vale também
-para o que a interface cria depois (cartões novos a cada atualização da página)."""
+dos títulos, e sombras/brilho dos cartões."""
 
-from PySide6.QtCore import QEvent, QObject
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import QApplication, QGraphicsDropShadowEffect, QLabel, QWidget
 
@@ -24,24 +23,31 @@ def shadow_for(tokens):
 
 
 class WidgetStyler(QObject):
+    """Aplica o que o QSS não faz. NÃO usa filtro de eventos do aplicativo: um filtro em Python recebendo todos os eventos
+    derrubava o processo quando o QtWebEngine (player online) criava e destruía seus objetos internos. Em vez disso o
+    tema varre as janelas (`sweep`) ao trocar de tema, de página e em intervalos curtos enquanto há algo a aplicar."""
+
     def __init__(self, tokens):
         super().__init__()
         self._tokens = tokens
 
-    def install(self, app=None):
-        (app or QApplication.instance()).installEventFilter(self)
+    @property
+    def active(self):
+        """O tema atual pede algo além do QSS (títulos em maiúsculas, sombras ou brilho)?"""
+        t = self._tokens
+        return t.get("heading", "normal") != "normal" or bool(t.get("shadow")) or bool(t.get("glow"))
 
     def set_tokens(self, tokens):
-        """Troca o tema: reaplica a todos os widgets que já existem."""
+        """Troca o tema: reaplica a tudo o que já existe (inclusive para desfazer o efeito do tema anterior)."""
         self._tokens = tokens
-        app = QApplication.instance()
-        for widget in app.allWidgets():
-            self.apply(widget)
+        self.sweep()
 
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Polish and isinstance(obj, QWidget):
-            self.apply(obj)
-        return False
+    def sweep(self, root=None):
+        roots = [root] if root is not None else QApplication.instance().topLevelWidgets()
+        for top in roots:
+            self.apply(top)
+            for widget in top.findChildren(QWidget):
+                self.apply(widget)
 
     # -- aplicação --------------------------------------------------------------------------------------
     def apply(self, widget):
@@ -76,21 +82,23 @@ class WidgetStyler(QObject):
         if existing is not None and not widget.property(_MARK):
             return  # o widget já tem um efeito próprio (ex.: esmaecer); não o substitui
         effect = existing if isinstance(existing, QGraphicsDropShadowEffect) and widget.property(_MARK) else QGraphicsDropShadowEffect(widget)
+        wanted = qcolor(color) if isinstance(color, str) else QColor(color)
+        if effect is existing and effect.blurRadius() == blur and effect.offset().x() == dx and effect.offset().y() == dy \
+                and effect.color() == wanted:
+            return  # já está como o tema pede: nada de repintar a cada varredura
         effect.setBlurRadius(blur)
         effect.setOffset(dx, dy)
-        effect.setColor(qcolor(color) if isinstance(color, str) else QColor(color))
+        effect.setColor(wanted)
         if effect is not existing:
             widget.setGraphicsEffect(effect)
             widget.setProperty(_MARK, True)
 
 
 def shared_styler(tokens, app=None):
-    """Um único WidgetStyler por aplicação: vários filtros de eventos em Python (um por janela já criada) multiplicariam o
-    custo de cada evento do aplicativo inteiro. Quem pede depois só atualiza os tokens do que já existe."""
+    """Um único WidgetStyler por aplicação: quem pede depois só atualiza os tokens do que já existe."""
     app = app or QApplication.instance()
     styler = getattr(app, "_dino_styler", None)
     if styler is None:
         styler = WidgetStyler(tokens)
-        styler.install(app)
         app._dino_styler = styler
     return styler

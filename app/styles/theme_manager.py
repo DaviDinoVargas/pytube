@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 
 from app.styles import icons
@@ -416,6 +416,14 @@ class ThemeManager(QObject):
         self._preference = preference
         self._name = resolve_theme(preference)
         self._styler = shared_styler(THEMES[self._name], app)
+        # cartões e títulos criados depois (a cada atualização de página) recebem sombra/maiúsculas na próxima varredura
+        self._sweep_timer = QTimer(self)
+        self._sweep_timer.setInterval(500)
+        self._sweep_timer.timeout.connect(self._styler.sweep)
+
+    @property
+    def styler(self):
+        return self._styler
 
     @property
     def name(self):
@@ -432,4 +440,8 @@ class ThemeManager(QObject):
         icons.set_stroke(self.tokens["stroke"])
         self._app.setStyleSheet(build_stylesheet(self.tokens))
         self._styler.set_tokens(self.tokens)
+        if self._styler.active:
+            self._sweep_timer.start()
+        else:
+            self._sweep_timer.stop()
         self.theme_changed.emit(self._name)

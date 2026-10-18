@@ -48,3 +48,33 @@ def test_heading_style_uppercases(qtbot):
 def test_thumbnail_radius_follows_theme():
     assert theme_radius(10, THEMES["luxury"]) == 0
     assert theme_radius(10, THEMES["pixel"]) < theme_radius(10, THEMES["dark"])
+
+
+def test_sweep_styles_widgets_created_later_and_reverts_on_theme_change(qtbot):
+    from PySide6.QtWidgets import QFrame, QGraphicsDropShadowEffect
+
+    root = QFrame()
+    qtbot.addWidget(root)
+    card = QFrame(root)
+    card.setObjectName("videoCard")
+    title = QLabel("Início", root)
+    title.setObjectName("pageTitle")
+    styler = WidgetStyler(THEMES["pixel"])
+    assert styler.active
+    styler.sweep(root)
+    assert isinstance(card.graphicsEffect(), QGraphicsDropShadowEffect)
+    assert title.font().capitalization() == QFont.AllUppercase
+    effect = card.graphicsEffect()
+    styler.sweep(root)
+    assert card.graphicsEffect() is effect  # varreduras seguidas não recriam nem repintam o efeito
+    styler.set_tokens(THEMES["light"])
+    styler.sweep(root)
+    assert not styler.active and card.graphicsEffect() is None
+    assert title.font().capitalization() == QFont.MixedCase
+
+
+def test_no_application_wide_python_event_filter(qtbot):
+    """Um filtro de eventos do aplicativo em Python derrubava o processo com o QtWebEngine."""
+    import app.styles.styler as styler_module
+
+    assert "eventFilter" not in vars(styler_module.WidgetStyler)
