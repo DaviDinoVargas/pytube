@@ -113,80 +113,111 @@ class LayoutSwatch(QAbstractButton):
             self._box(p, bar, "border", 1)
             self._box(p, QRectF(bar.left(), bar.top(), bar.width() * 0.45, 2), "progress", 1)
 
-    # -- um desenho por layout -------------------------------------------------------------
+    # -- um desenho por layout (a anatomia real de cada um) -----------------------------------------------
     def _draw_classic(self, p, a):
-        main = self._sidebar(p, a, 30)
-        main = self._topbar(p, main)
-        details = QRectF(main.right() - 26, main.top(), 26, main.height())
+        main = self._sidebar(p, a, 30)  # sidebar larga à esquerda
+        main = self._topbar(p, main)  # barra de link e busca
         player = QRectF(main.left(), main.top(), main.width() - 31, main.height() * 0.52)
         self._player(p, player)
         self._lines(p, player.left(), player.bottom() + 5, 40, 2)
         self._tiles(p, player.left(), player.bottom() + 20, 18, 12, 3)
+        details = QRectF(main.right() - 26, main.top(), 26, main.height())  # detalhes opcionais (tracejado)
         p.setPen(QPen(_color(self._tokens["border"]), 1, Qt.DashLine))
         p.setBrush(Qt.NoBrush)
         p.drawRoundedRect(details, 3, 3)
-        self._lines(p, details.left() + 3, details.top() + 5, 20, 3, key="border")
+
+    def _topnav(self, p, area, tabs=5):
+        bar = QRectF(area.left(), area.top(), area.width(), 8)
+        self._box(p, QRectF(bar.left() + 2, bar.top() + 1, 12, 5), "text_primary", 2)
+        for i in range(tabs):
+            self._box(p, QRectF(bar.left() + 20 + i * 14, bar.top() + 2.5, 10, 2.5), "accent" if i == 0 else "text_secondary", 1)
+        self._box(p, QRectF(bar.right() - 30, bar.top() + 1, 18, 5), "surface_elevated", 2.5)
+        self._box(p, QRectF(bar.right() - 10, bar.top() + 1, 10, 5), "accent", 2.5)
+        return QRectF(area.left(), area.top() + 11, area.width(), area.height() - 11)
 
     def _draw_streaming(self, p, a):
-        main = self._sidebar(p, a, 14, icons=True)
-        main = self._topbar(p, main)
-        hero = QRectF(main.left(), main.top(), main.width(), main.height() * 0.42)
-        self._box(p, hero, "accent_soft", 4)
+        main = self._topnav(p, a)  # abas no topo, sem sidebar
+        hero = QRectF(main.left(), main.top(), main.width(), main.height() * 0.46)  # destaque de ponta a ponta
+        self._box(p, hero, "accent_soft", 0)
         self._box(p, QRectF(hero.left() + 5, hero.bottom() - 13, 30, 3), "text_primary", 1.5)
         self._box(p, QRectF(hero.left() + 5, hero.bottom() - 8, 14, 5), "accent", 2)
         for row in range(2):
-            y = hero.bottom() + 6 + row * 20
-            self._box(p, QRectF(main.left(), y, 24, 2), "text_secondary", 1)
-            self._tiles(p, main.left(), y + 5, 22, 11, 4)
+            y = hero.bottom() + 5 + row * 17
+            self._box(p, QRectF(main.left() + 4, y, 22, 2), "text_secondary", 1)
+            self._tiles(p, main.left() + 4, y + 4, 22, 10, 4)
 
     def _draw_cinema(self, p, a):
-        self._box(p, a, "surface", 4)
-        self._box(p, QRectF(a.center().x() - 5, a.center().y() - 5, 10, 10), "text_secondary", 5)
-        self._box(p, QRectF(a.left() + 4, a.top() + 4, a.width() * 0.4, 4), "surface_elevated", 2)  # título que some
-        bar = QRectF(a.left() + 6, a.bottom() - 8, a.width() - 12, 3)
-        self._box(p, bar, "border", 1.5)
-        self._box(p, QRectF(bar.left(), bar.top(), bar.width() * 0.4, 3), "progress", 1.5)
+        top = QRectF(a.left(), a.top(), a.width(), 9)  # cabeçalho translúcido
+        grad = QLinearGradient(top.topLeft(), top.bottomLeft())
+        grad.setColorAt(0, QColor(0, 0, 0, 200))
+        grad.setColorAt(1, QColor(0, 0, 0, 0))
+        p.fillRect(top, grad)
+        for i in range(3):
+            self._box(p, QRectF(a.left() + 4 + i * 14, a.top() + 3, 10, 2.5), "accent" if i == 0 else "text_secondary", 1)
+        for row in range(2):  # mural de pôsteres
+            for col in range(4):
+                self._box(p, QRectF(a.left() + 2 + col * 29, a.top() + 14 + row * 26, 27, 24), "surface_elevated", 3)
+        self._box(p, QRectF(a.left() + 2, a.top() + 14, 27, 24), "accent_soft", 3)
+        self._box(p, QRectF(a.left() + 2, a.bottom() - 6, a.width() - 4, 2), "progress", 1)
 
     def _draw_manager(self, p, a):
-        main = self._sidebar(p, a, 14, icons=True)
-        main = self._topbar(p, main)
-        for i in range(4):  # filtros avançados
-            self._box(p, QRectF(main.left() + i * 20, main.top(), 17, 6), "accent_soft" if i == 0 else "surface_elevated", 3)
-        head = QRectF(main.left(), main.top() + 10, main.width(), 6)
-        self._box(p, head, "surface_hover", 2)
+        tree = QRectF(a.left(), a.top(), 26, a.height() - 8)  # árvore à esquerda
+        self._box(p, tree, "surface", 3)
+        for i in range(7):
+            self._box(p, QRectF(tree.left() + 3 + (3 if i in (1, 2, 4, 5) else 0), tree.top() + 4 + i * 8, 14, 2.5),
+                      "accent" if i == 1 else "text_secondary", 1)
+        main = QRectF(tree.right() + 4, a.top(), a.width() - 30, a.height() - 8)
+        ribbon = QRectF(main.left(), main.top(), main.width(), 8)  # faixa de ações
+        self._box(p, ribbon, "surface_elevated", 2)
+        for i in range(4):
+            self._box(p, QRectF(ribbon.left() + 3 + i * 13, ribbon.top() + 2, 10, 4), "text_secondary", 1.5)
+        table = QRectF(main.left(), ribbon.bottom() + 3, main.width() - 24, main.height() - 12)
+        self._box(p, QRectF(table.left(), table.top(), table.width(), 5), "surface_hover", 2)
         for row in range(5):
-            y = head.bottom() + 3 + row * 8
+            y = table.top() + 8 + row * 8
             if row == 1:
-                self._box(p, QRectF(main.left(), y - 1, main.width(), 7), "accent_soft", 2)
-            for col, w in enumerate((0.38, 0.12, 0.16, 0.14, 0.12)):
-                x = main.left() + 2 + sum((0.38, 0.12, 0.16, 0.14, 0.12)[:col]) * main.width()
-                self._box(p, QRectF(x, y + 1, main.width() * w - 4, 2.5), "text_secondary", 1)
+                self._box(p, QRectF(table.left(), y - 1, table.width(), 7), "accent_soft", 2)
+            for col, w in enumerate((0.4, 0.14, 0.2, 0.16)):
+                x = table.left() + 2 + sum((0.4, 0.14, 0.2, 0.16)[:col]) * table.width()
+                self._box(p, QRectF(x, y + 1, table.width() * w - 4, 2.5), "text_secondary", 1)
+        preview = QRectF(table.right() + 3, table.top(), 21, table.height())  # prévia
+        self._box(p, preview, "surface", 3)
+        self._box(p, QRectF(preview.left() + 2, preview.top() + 2, 17, 10), "accent_soft", 2)
+        self._lines(p, preview.left() + 2, preview.top() + 16, 17, 3)
+        self._box(p, QRectF(a.left(), a.bottom() - 6, a.width(), 6), "surface_elevated", 2)  # barra de estado
 
     def _draw_workstation(self, p, a):
-        main = self._sidebar(p, a, 14, icons=True)
-        left_w = main.width() * 0.26
-        right_w = main.width() * 0.28
-        left = QRectF(main.left(), main.top(), left_w, main.height())
-        right = QRectF(main.right() - right_w, main.top(), right_w, main.height())
-        center = QRectF(left.right() + 4, main.top(), main.width() - left_w - right_w - 8, main.height())
-        self._box(p, left, "surface", 3)
+        activity = QRectF(a.left(), a.top(), 8, a.height() - 8)  # barra de atividades
+        self._box(p, activity, "surface_elevated", 2)
+        for i in range(4):
+            self._box(p, QRectF(activity.left() + 2, activity.top() + 4 + i * 9, 4, 4), "accent" if i == 0 else "text_secondary", 1.5)
+        dock = QRectF(activity.right() + 3, a.top(), 30, a.height() - 8)  # painel com abas
+        self._box(p, dock, "surface", 3)
+        for i in range(3):
+            self._box(p, QRectF(dock.left() + 2 + i * 9, dock.top() + 2, 7, 3), "accent" if i == 0 else "text_secondary", 1)
         for i in range(5):
-            self._box(p, QRectF(left.left() + 3, left.top() + 4 + i * 11, left.width() - 6, 8), "accent_soft" if i == 1 else "surface_elevated", 2)
-        self._player(p, QRectF(center.left(), center.top(), center.width(), center.height() * 0.55))
-        self._lines(p, center.left(), center.top() + center.height() * 0.55 + 5, center.width() * 0.6, 3)
+            self._box(p, QRectF(dock.left() + 2, dock.top() + 9 + i * 9, dock.width() - 4, 7), "accent_soft" if i == 1 else "surface_elevated", 2)
+        right = QRectF(a.right() - 30, a.top(), 30, a.height() - 8)
+        center = QRectF(dock.right() + 3, a.top(), right.left() - dock.right() - 6, a.height() - 8)
+        self._player(p, QRectF(center.left(), center.top(), center.width(), center.height() * 0.5))
+        self._lines(p, center.left(), center.top() + center.height() * 0.5 + 4, center.width() * 0.7, 3)
         self._box(p, right, "surface", 3)
-        self._lines(p, right.left() + 3, right.top() + 5, right.width() - 6, 2)
-        self._box(p, QRectF(right.left() + 3, right.top() + 20, right.width() - 6, right.height() - 36), "input_bg", 2)  # notas
-        for i in range(2):
-            self._box(p, QRectF(right.left() + 3 + i * 14, right.bottom() - 11, 12, 6), "accent_soft", 3)
+        self._lines(p, right.left() + 2, right.top() + 3, right.width() - 4, 2)
+        self._box(p, QRectF(right.left() + 2, right.top() + 14, right.width() - 4, 22), "input_bg", 2)  # notas
+        for i in range(3):  # marcadores
+            self._box(p, QRectF(right.left() + 2, right.top() + 40 + i * 6, right.width() - 4, 4), "accent_soft", 1.5)
+        self._box(p, QRectF(a.left(), a.bottom() - 6, a.width(), 6), "surface_elevated", 2)
 
     def _draw_compact(self, p, a):
-        win = QRectF(a.center().x() - 24, a.top(), 48, a.height())
+        win = QRectF(a.center().x() - 26, a.top(), 52, a.height())  # janela pequena
         self._box(p, win, "surface", 4)
-        self._box(p, QRectF(win.left() + 3, win.top() + 3, win.width() - 6, 3), "surface_elevated", 1.5)
-        self._player(p, QRectF(win.left() + 3, win.top() + 9, win.width() - 6, 30))
-        for i in range(4):
-            self._box(p, QRectF(win.left() + 3, win.top() + 43 + i * 9, win.width() - 6, 7), "accent_soft" if i == 0 else "surface_elevated", 2)
+        head = QRectF(win.left(), win.top(), win.width(), 8)
+        self._box(p, head, "surface_elevated", 4)
+        self._box(p, QRectF(head.left() + 3, head.top() + 2.5, 5, 3), "text_secondary", 1)
+        self._box(p, QRectF(head.right() - 17, head.top() + 2.5, 3, 3), "text_secondary", 1)
         p.setPen(Qt.NoPen)
         p.setBrush(_color(self._tokens["accent"]))
-        p.drawEllipse(QPointF(win.right() - 6, win.top() + 4.5), 2, 2)  # alfinete: ficar por cima
+        p.drawEllipse(QPointF(head.right() - 8, head.top() + 4), 2, 2)  # alfinete: fica por cima
+        self._player(p, QRectF(win.left() + 3, win.top() + 11, win.width() - 6, 28))
+        for i in range(4):
+            self._box(p, QRectF(win.left() + 3, win.top() + 43 + i * 8, win.width() - 6, 6), "accent_soft" if i == 0 else "surface_elevated", 2)

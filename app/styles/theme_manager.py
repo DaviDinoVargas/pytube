@@ -216,6 +216,53 @@ QHeaderView::section {{
 }}
 QHeaderView::section:hover {{ color: {t['text_primary']}; background: {t['surface_hover']}; }}
 QTableCornerButton::section {{ background: {t['surface_elevated']}; border: none; }}
+QFrame#topNav {{ background: {t['topbar_bg']}; border-bottom: 1px solid {t['border']}; }}
+QFrame#topNav[navStyle="cinema"] {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 rgba(0, 0, 0, 215), stop:1 rgba(0, 0, 0, 0)); border: none; }}
+QFrame#topNav[navStyle="cinema"] QLabel, QFrame#topNav[navStyle="cinema"] QToolButton#topTab {{ color: #FFFFFF; }}
+QLabel#topBrand {{ font-family: {title}; font-size: 19px; font-weight: 800; letter-spacing: 0.4px; }}
+QToolButton#topTab {{
+    background: transparent; border: none; border-bottom: 3px solid transparent; border-radius: 0;
+    padding: 19px 14px 16px 14px; color: {t['text_secondary']}; font-weight: 600; font-size: 14px;
+}}
+QToolButton#topTab:hover {{ color: {t['text_primary']}; }}
+QToolButton#topTab:checked {{ color: {t['text_primary']}; border-bottom: 3px solid {t['accent_fg']}; }}
+QToolButton#topTab:focus {{ border-bottom: 3px solid {t['focus']}; }}
+QLineEdit#topSearch {{ border-radius: 18px; padding: 7px 14px; }}
+QFrame#linkPopup {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; border-radius: {r['md']}px; }}
+QFrame#linkPopup QLabel {{ background: transparent; }}
+QFrame#topbar[slim="true"] {{ background: {t['surface']}; border-bottom: 1px solid {t['border']}; }}
+QFrame#upNext, QScrollArea#upNextScroll, QWidget#upNextContent {{ background: transparent; }}
+QFrame#upNextRow {{ background: transparent; border: 2px solid transparent; border-radius: {r['md']}px; }}
+QFrame#upNextRow:hover {{ background: {t['surface_hover']}; }}
+QFrame#upNextRow[current="true"] {{ background: {t['accent_soft']}; }}
+QFrame#upNextRow:focus {{ border: 2px solid {t['focus']}; }}
+QFrame#upNextRow QLabel {{ background: transparent; }}
+QFrame#navTreeFrame {{ background: {t['sidebar_bg']}; border-right: 1px solid {t['border']}; }}
+QTreeWidget#navTree {{ background: transparent; outline: none; border: none; padding: 8px 6px; }}
+QTreeWidget#navTree::item {{ padding: 6px 6px; border-radius: {r['sm']}px; }}
+QTreeWidget#navTree::item:hover {{ background: {t['surface_hover']}; }}
+QTreeWidget#navTree::item:selected {{ background: {t['accent_soft']}; color: {t['text_primary']}; }}
+QTreeWidget#navTree::branch {{ background: transparent; }}
+QFrame#appStatusBar {{ background: {t['surface']}; border-top: 1px solid {t['border']}; }}
+QFrame#appStatusBar QLabel {{ background: transparent; color: {t['text_secondary']}; font-size: 12px; }}
+QFrame#appStatusBar QLabel#statusOk {{ color: {t['success']}; }}
+QFrame#appStatusBar QLabel#statusError {{ color: {t['error']}; }}
+QFrame#bulkBar[ribbon="true"] {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; border-radius: {r['sm']}px; }}
+QFrame#workspaceDock, QFrame#notesIndex {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#dockTabs {{ background: transparent; border-bottom: 1px solid {t['border']}; }}
+QToolButton#dockTab {{
+    background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px;
+    color: {t['text_secondary']}; font-weight: 600;
+}}
+QToolButton#dockTab:hover {{ color: {t['text_primary']}; }}
+QToolButton#dockTab:checked {{ color: {t['text_primary']}; border-bottom: 2px solid {t['accent_fg']}; }}
+QToolButton#dockTab:focus {{ border-bottom: 2px solid {t['focus']}; }}
+QListWidget#markersList {{ background: transparent; border: none; outline: none; }}
+QListWidget#markersList::item {{ padding: 4px 6px; border-radius: {r['sm']}px; }}
+QListWidget#markersList::item:hover {{ background: {t['surface_hover']}; }}
+QFrame#compactBar {{ background: {t['topbar_bg']}; border-bottom: 1px solid {t['border']}; }}
+QLabel#compactTitle {{ font-weight: 700; font-size: 14px; }}
+QLabel#compactTitle[error="true"] {{ color: {t['error']}; }}
 QFrame#playerNotice {{ background: {t['accent_soft']}; }}
 QLabel#playerTime {{ color: {t['text_secondary']}; font-size: 12px; }}
 QLabel#sourceChip {{

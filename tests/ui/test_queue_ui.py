@@ -235,28 +235,28 @@ def test_compact_shrinks_the_window_and_the_full_button_brings_it_back(w):
     normal_min = w.minimumSize()
     choose(w, "compact")
     assert w.width() <= 500 and w.minimumWidth() < normal_min.width()
-    assert w.sidebar.isHidden() and not w.top_bar.menu_button.isHidden() and w.top_bar.search_input.isHidden()
-    w.watch_page.full_button.click()
+    assert w.sidebar.isHidden() and w.top_bar.isHidden() and not w.compact_bar.isHidden()
+    w.compact_bar.full_button.click()
     assert w.layouts.key == "classic" and w.width() == 1280 and w.minimumSize() == normal_min
-    assert w.top_bar.menu_button.isHidden() and not w.top_bar.search_input.isHidden()
+    assert w.compact_bar.isHidden() and not w.top_bar.isHidden()
 
 
 def test_full_window_returns_to_the_layout_used_before(w, settings):
     choose(w, "streaming")
     choose(w, "compact")
     assert settings.layout_before_compact == "streaming"
-    w.watch_page.full_button.click()
+    w.compact_bar.full_button.click()
     assert w.layouts.key == "streaming" and settings.layout == "streaming"
 
 
 def test_compact_page_shows_player_title_and_queue_only(w):
-    a = add(w, 1)
+    v = a = add(w, 1)
     w.queue.add([a.id])
     choose(w, "compact")
     w.open_saved_video(a.id)
     wp = w.watch_page
     assert wp.info_block.isHidden() and wp.meta_label.isHidden() and not wp.queue_panel.isHidden()
-    assert wp.pin_button.isVisibleTo(wp) and wp.full_button.isVisibleTo(wp)
+    assert not w.compact_bar.isHidden() and w.compact_bar.title_label.toolTip() == v.title
     c = wp.player.controls
     assert c.volume_slider.isHidden() and c.quality_button.isHidden() and c.mini_button.isHidden() and not c.fullscreen_button.isHidden()
     assert wp.title_label.property("compact") is True
@@ -274,26 +274,46 @@ def test_leaving_compact_restores_the_watch_page(w):
     choose(w, "classic")
     w.open_saved_video(a.id)
     wp = w.watch_page
-    assert not wp.info_block.isHidden() and wp.pin_button.isHidden() and wp.player.controls.volume_slider.isVisibleTo(wp.player.controls)
+    assert not wp.info_block.isHidden() and w.compact_bar.isHidden() and wp.player.controls.volume_slider.isVisibleTo(wp.player.controls)
     assert wp.queue_panel.isHidden()  # fila vazia fora do compacto
 
 
 def test_pin_keeps_the_window_on_top_only_in_compact_and_persists(w, settings):
     assert not w.layouts.keep_on_top
     choose(w, "compact")
-    assert w.layouts.keep_on_top and w.watch_page.pin_button.isChecked()
-    w.watch_page.pin_button.click()
+    bar = w.compact_bar
+    assert w.layouts.keep_on_top and bar.pin_button.isChecked()
+    bar.pin_button.click()
     assert not w.layouts.keep_on_top and settings.compact_on_top is False
-    w.watch_page.pin_button.click()
+    bar.pin_button.click()
     assert w.layouts.keep_on_top and settings.compact_on_top is True
-    w.watch_page.full_button.click()
+    bar.full_button.click()
     assert not w.layouts.keep_on_top  # nos outros layouts a janela nunca fica por cima
 
 
 def test_compact_nav_menu_reaches_the_pages(w):
     choose(w, "compact")
-    menu = w.top_bar.menu_button.menu()
+    menu = w.compact_bar.menu_button.menu()
     labels = [a.text() for a in menu.actions() if a.text()]
     assert "Biblioteca" in labels and "Configurações" in labels and "Fila de reprodução" in labels
     next(a for a in menu.actions() if a.text() == "Biblioteca").trigger()
     assert w.current_page == "library"
+
+
+def test_compact_header_shows_the_page_and_the_video_title(w):
+    choose(w, "compact")
+    w.show_page("library")
+    assert "Biblioteca" in w.compact_bar.title_label.text()
+    v = add(w, 1, "Aula especial")
+    w.open_saved_video(v.id)
+    assert "Aula especial" in w.compact_bar.title_label.text()
+
+
+def test_paste_button_opens_the_link_in_the_clipboard_and_complains_otherwise(w, qtbot):
+    choose(w, "compact")
+    QApplication.clipboard().setText("isto não é um link")
+    w.compact_bar.paste_button.click()
+    assert "área de transferência" in w.compact_bar.title_label.text()
+    QApplication.clipboard().setText("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    w.compact_bar.paste_button.click()
+    assert w.current_page == "watch"

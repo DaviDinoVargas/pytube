@@ -36,6 +36,10 @@ from app.ui.workers import run_async
 from app.services.storage_service import STATUS_READY
 from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
+from app.ui.chrome.compact_bar import CompactBar
+from app.ui.chrome.nav_tree import NavTree
+from app.ui.chrome.status_bar import AppStatusBar
+from app.ui.chrome.top_nav import TopNav
 from app.ui.widgets.sidebar import NAV_ITEMS, Sidebar
 from app.ui.widgets.url_bar import TopBar
 
@@ -73,15 +77,28 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setObjectName("root")
         self.setCentralWidget(root)
-        row = QHBoxLayout(root)
+        shell = QVBoxLayout(root)  # [navegação do topo] / [corpo] / [barra de estado]
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
+        self.top_nav = TopNav(translator, tokens)
+        self.top_nav.hide()
+        shell.addWidget(self.top_nav)
+        row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
+        shell.addLayout(row, 1)
 
         self.sidebar = Sidebar(translator, tokens, settings.sidebar_collapsed)
         row.addWidget(self.sidebar)
+        self.nav_tree = NavTree(translator, tokens)  # navegação do layout Gerenciador
+        self.nav_tree.hide()
+        row.addWidget(self.nav_tree)
 
         column = QVBoxLayout()
         column.setSpacing(0)
+        self.compact_bar = CompactBar(translator, tokens)  # layout Compacto: cabeçalho da janela pequena
+        self.compact_bar.hide()
+        column.addWidget(self.compact_bar)
         self.top_bar = TopBar(translator, tokens)
         column.addWidget(self.top_bar)
 
@@ -120,6 +137,7 @@ class MainWindow(QMainWindow):
         )
         self.watch_page.playback_ended.connect(self._on_playback_ended)
         self.watch_page.video_opened.connect(self.open_saved_video)
+        self.watch_page.video_shown.connect(self.compact_bar.set_title)
         self.queue.changed.connect(self._sync_queue_current)
         self.queue.changed.connect(self.watch_page.refresh_queue)
         self.watch_page.queue_add_requested.connect(lambda video_id: self._queue_add([video_id]))
@@ -128,15 +146,17 @@ class MainWindow(QMainWindow):
         self.watch_page.queue_remove_requested.connect(self.queue.remove)
         self.watch_page.queue_order_changed.connect(self.queue.set_order)
         self.watch_page.queue_clear_requested.connect(self.queue.clear)
-        self.watch_page.keep_on_top_toggled.connect(lambda on: self.layouts.set_keep_on_top(on))
-        self.watch_page.full_window_requested.connect(lambda: self._on_layout(self._settings.layout_before_compact))
+        self.compact_bar.pin_toggled.connect(self._on_pin_toggled)
+        self.compact_bar.full_requested.connect(lambda: self._on_layout(self._settings.layout_before_compact))
+        self.compact_bar.paste_requested.connect(self._paste_link)
+        self.compact_bar.set_pinned(settings.compact_on_top)
         self.watch_page.player.mini_changed.connect(self._on_mini_changed)
         self.watch_page.player.expand_requested.connect(self._enter_watch)
         self.playlist_page = PlaylistDetailPage(translator, self.org, library, tokens)
         self._add_page(self.playlist_page)
         self._playlist_id = None
         self.watch_page.back_requested.connect(self._go_back)
-        self.watch_page.message.connect(self.top_bar.show_message)
+        self.watch_page.message.connect(self.notify)
         self._add_page(self.watch_page)
         for page in self.pages.values():
             if hasattr(page, "video_opened"):
@@ -145,23 +165,27 @@ class MainWindow(QMainWindow):
                 page.video_action.connect(self._on_video_action)
         self.pages["home"].playlist_opened.connect(self.open_playlist)
         self.pages["home"].category_all_requested.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
-        self.pages["history"].message.connect(self.top_bar.show_message)
-        self.pages["categories"].message.connect(self.top_bar.show_message)
+        self.pages["history"].message.connect(self.notify)
+        self.pages["categories"].message.connect(self.notify)
         self.pages["categories"].category_opened.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
-        self.pages["playlists"].message.connect(self.top_bar.show_message)
+        self.pages["playlists"].message.connect(self.notify)
         self.pages["playlists"].playlist_opened.connect(self.open_playlist)
         self.pages["playlists"].play_requested.connect(lambda pid: self.play_playlist(pid))
         self.pages["playlists"].smart_opened.connect(self.open_smart_playlist)
         self.pages["playlists"].smart_play_requested.connect(self.play_smart_playlist)
         self.playlist_page.back_requested.connect(lambda: self.show_page("playlists"))
         self.playlist_page.play_requested.connect(self.play_playlist)
-        self.pages["downloads"].message.connect(self.top_bar.show_message)
-        self.pages["library"].message.connect(self.top_bar.show_message)
+        self.pages["downloads"].message.connect(self.notify)
+        self.pages["library"].message.connect(self.notify)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
         self._search_timer.timeout.connect(self._apply_search)
-        self.top_bar.search_changed.connect(lambda _text: self._search_timer.start())
+        self._search_text = ""
+        self.top_bar.search_changed.connect(self._on_search_typed)
+        self.top_nav.search_changed.connect(self._on_search_typed)
+        self.top_nav.page_selected.connect(self.show_page)
+        self.top_nav.video_requested.connect(self._on_video_requested)
         self.query_state.changed.connect(self._sync_search_field)
         library.changed.connect(self._on_library_changed)
         self.downloads.queue_changed.connect(self._on_downloads_changed)
@@ -181,7 +205,22 @@ class MainWindow(QMainWindow):
         self.settings_button.clicked.connect(self._toggle_settings)
         footer_row.addWidget(self.settings_button)
         column.addWidget(footer)
+        self.footer = footer
+        self._footer_row = footer_row
         row.addLayout(column, 1)
+        self.status_bar = AppStatusBar(translator)  # layouts Gerenciador e Estação: a engrenagem muda para cá
+        self.status_bar.hide()
+        shell.addWidget(self.status_bar)
+        self._status_timer = QTimer(self)
+        self._status_timer.setSingleShot(True)
+        self._status_timer.setInterval(200)
+        self._status_timer.timeout.connect(self._refresh_status)
+        self.nav_tree.query_requested.connect(self._on_tree_query)
+        self.nav_tree.category_requested.connect(lambda cid: self.show_library_with(category_ids=frozenset({cid})))
+        self.nav_tree.playlist_requested.connect(lambda pid: self.show_library_with(playlist_id=pid))
+        self.nav_tree.page_requested.connect(self.show_page)
+        self.pages["library"].selection_count_changed.connect(self._on_selection_count)
+        self.query_state.changed.connect(self._sync_tree_selection)
 
         self.sidebar.page_selected.connect(self.show_page)
         self.sidebar.collapsed_changed.connect(lambda c: setattr(settings, "sidebar_collapsed", c))
@@ -210,16 +249,91 @@ class MainWindow(QMainWindow):
         return self.stack.currentWidget().key
 
     def show_page(self, key):
+        key = self._redirect(key)
         if key not in self.pages:
             return
         if key not in ("settings", "watch", "playlist"):
             self._previous_page = key
         self.stack.setCurrentWidget(self.pages[key])
+        self.top_nav.select(key)
+        self._update_compact_title()
         self.layouts.on_page_changed(key)
         self.settings_button.setChecked(key == "settings")
         self.sidebar.select("playlists" if key == "playlist" else key)
         if key not in ("watch", "playlist"):
             self._settings.last_page = key
+
+    def _update_compact_title(self):
+        key = self.current_page if hasattr(self, "stack") and self.stack.currentWidget() is not None else "home"
+        if key == "watch" and self.watch_page.player.video is not None:
+            self.compact_bar.set_title(self.watch_page.player.video.title)
+        else:
+            self.compact_bar.set_title(self._tr.t(f"nav.{key}") if key in NAV_ITEMS or key == "settings" else "DinoTube")
+
+    def _redirect(self, key):
+        """Em layouts de tabela única (Gerenciador), Início, Baixados e Continuar viram consultas da própria biblioteca."""
+        controller = getattr(self, "layouts", None)
+        target = controller.profile.redirect(key) if controller is not None else None
+        if target is None or key == target:
+            return key
+        if key == "downloaded":
+            self.query_state.focus(state="downloaded")
+        elif key == "continue":
+            self.query_state.focus(watch="in_progress", sort="last_played")
+        return target
+
+    # -- árvore de navegação e barra de estado -------------------------------------------------------------
+    def _on_tree_query(self, query):
+        self.query_state.open(query)
+        self.show_page("library")
+
+    def _sync_tree_selection(self):
+        if self.nav_tree.isVisible():
+            self.nav_tree.select(self.nav_tree.key_for_query(self.query_state.query) if self.current_page == "library" else None)
+
+    def _on_selection_count(self, count):
+        self._selection_count = count
+        self._update_status_selection()
+
+    def _update_status_selection(self):
+        n = getattr(self, "_selection_count", 0)
+        t = self._tr.t
+        self.status_bar.set_selection("" if n == 0 else (t("status.selected_one") if n == 1 else t("status.selected", count=n)))
+
+    def _refresh_status(self):
+        """Contagens da árvore e da barra de estado (com pequeno atraso: uma operação em lote dispara muitos avisos)."""
+        if not self.library.ready or not (self.nav_tree.isVisible() or self.status_bar.isVisible()):
+            return
+        from app.domain.query import apply_query
+        from app.services.storage_service import format_bytes
+
+        t = self._tr.t
+        data = self.org.load_data()
+        from app.ui.chrome.nav_tree import LIBRARY_ENTRIES
+
+        counts = {f"library/{key}": len(apply_query(query, data)) for key, _label, query in LIBRARY_ENTRIES}
+        from app.domain.query import LibraryQuery
+
+        for category in data.categories:
+            counts[f"category/{category.id}"] = len(apply_query(LibraryQuery(category_ids=frozenset({category.id})), data))
+        for playlist in data.playlists:
+            counts[f"playlist/{playlist.id}"] = len(apply_query(LibraryQuery(playlist_id=playlist.id), data))
+        counts["page/downloads"] = self.downloads.active_count()
+        self.nav_tree.refresh(data, counts)
+        self._sync_tree_selection()
+        total, downloaded = len(data.videos), counts.get("library/downloaded", 0)
+        self.status_bar.set_summary(t("status.videos_one") if total == 1 else t("status.videos", total=total, downloaded=downloaded))
+        active = self.downloads.active_count()
+        self.status_bar.set_downloads(t("status.downloads", count=active) if active else "")
+        try:
+            usage = self._storage.usage()
+            self.status_bar.set_disk(t("status.disk", used=format_bytes(usage["videos_bytes"]), free=format_bytes(usage["free"])))
+        except Exception:
+            self.status_bar.set_disk("")
+        self._update_status_selection()
+
+    def schedule_status_refresh(self):
+        self._status_timer.start()
 
     def _toggle_settings(self):
         if self.current_page == "settings":
@@ -292,7 +406,7 @@ class MainWindow(QMainWindow):
     # -- fila de reprodução ---------------------------------------------------------------------
     def _queue_add(self, ids, play_next=False):
         self.queue.add(ids, play_next)
-        self.top_bar.show_message(self._tr.t("queue.next_toast" if play_next else "queue.added_toast"), False)
+        self.notify(self._tr.t("queue.next_toast" if play_next else "queue.added_toast"), False)
 
     def _sync_queue_current(self):
         """O vídeo que está tocando e entra na fila vira o 'atual' dela."""
@@ -471,19 +585,49 @@ class MainWindow(QMainWindow):
             get_logger("app").info("Biblioteca em uso: modo %s", self._storage.config.mode)
 
     # -- busca e organização --------------------------------------------------------------------
+    def _on_pin_toggled(self, on):
+        self._settings.compact_on_top = on
+        self.layouts.set_keep_on_top(on)
+
+    def _paste_link(self):
+        """Abre o vídeo cujo link está na área de transferência (a janela compacta não tem campo de link)."""
+        from app.domain.urls import extract_video_id
+
+        text = QApplication.clipboard().text().strip()
+        video_id = extract_video_id(text) if text else None
+        if video_id is None:
+            self.notify(self._tr.t("compact.paste_empty"), True)
+            return
+        self._on_video_requested(video_id)
+
+    def _on_search_typed(self, text):
+        self._search_text = text
+        self._search_timer.start()
+
     def _apply_search(self):
-        """A busca da barra superior filtra a biblioteca (com debounce) e leva o usuário até ela."""
-        text = self.top_bar.search_input.text()
+        """A busca (da barra superior ou da navegação do topo) filtra a biblioteca, com debounce, e leva o usuário até ela."""
+        text = self._search_text
         self.query_state.set_text(text)
         if text.strip() and self.current_page != "library":
             self.show_page("library")
 
     def _sync_search_field(self):
-        field = self.top_bar.search_input
-        if field.text() != self.query_state.query.text:
-            field.blockSignals(True)
-            field.setText(self.query_state.query.text)
-            field.blockSignals(False)
+        text = self.query_state.query.text
+        for field in (self.top_bar.search_input, self.top_nav.search_input):
+            if field.text() != text:
+                field.blockSignals(True)
+                field.setText(text)
+                field.blockSignals(False)
+        self._search_text = text
+
+    def notify(self, text, error=False):
+        """Mensagem curta para o usuário, na barra que o layout atual mostra (todas recebem; só as visíveis aparecem)."""
+        self.top_bar.show_message(text, error)
+        self.top_nav.show_message(text, error)
+        self.compact_bar.show_message(text, error)
+        status = getattr(self, "status_bar", None)
+        if status is not None:
+            status.show_message(text, error)
 
     def show_library_with(self, **filters):
         """Abre a biblioteca já filtrada (ex.: por categoria ou playlist)."""
@@ -517,7 +661,7 @@ class MainWindow(QMainWindow):
         return result.get("item") if dialog.exec() == NameDialog.Accepted else None
 
     def _on_organized(self, kind):
-        self.top_bar.show_message(self._tr.t("bulk.categories_toast" if kind == "categories" else "bulk.playlist_toast"), False)
+        self.notify(self._tr.t("bulk.categories_toast" if kind == "categories" else "bulk.playlist_toast"), False)
 
     def _ffmpeg_tools(self):
         """ffmpeg/ffprobe verificados (a checagem roda uma vez). Levanta MediaError se faltarem."""
@@ -570,6 +714,7 @@ class MainWindow(QMainWindow):
         for page in self.pages.values():
             if hasattr(page, "mark_dirty"):
                 page.mark_dirty()
+        self.schedule_status_refresh()
 
     def _on_video_action(self, video_id, action):
         video = self.library.get(video_id)
@@ -651,7 +796,10 @@ class MainWindow(QMainWindow):
     def _apply_tokens(self):
         tokens = self._theme.tokens
         self.sidebar.set_tokens(tokens)
+        self.compact_bar.set_tokens(tokens)
         self.top_bar.set_tokens(tokens)
+        self.top_nav.set_tokens(tokens)
+        self.nav_tree.set_tokens(tokens)
         self.settings_button.setIcon(icon("settings", tokens["text_secondary"]))
         for page in self.pages.values():
             page.set_tokens(tokens)
@@ -661,13 +809,13 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QMenu
 
         t = self._tr.t
-        menu = QMenu(self.top_bar.menu_button)
+        menu = QMenu(self.compact_bar.menu_button)
         for key in NAV_ITEMS:
             menu.addAction(t(f"nav.{key}")).triggered.connect(lambda _=False, k=key: self.show_page(k))
         menu.addSeparator()
         menu.addAction(t("queue.title")).triggered.connect(lambda: self.show_landing("watch") if self.watch_page.player.video is None else self.show_page("watch"))
         menu.addAction(t("nav.settings")).triggered.connect(lambda: self.show_page("settings"))
-        self.top_bar.menu_button.setMenu(menu)
+        self.compact_bar.menu_button.setMenu(menu)
 
     def retranslate(self):
         self._build_nav_menu()
@@ -676,5 +824,9 @@ class MainWindow(QMainWindow):
         self.settings_button.setAccessibleName(label)
         self.sidebar.refresh()
         self.top_bar.retranslate()
+        self.compact_bar.retranslate()
+        self.top_nav.retranslate()
+        self.nav_tree.retranslate()
         for page in self.pages.values():
             page.retranslate()
+        self.schedule_status_refresh()

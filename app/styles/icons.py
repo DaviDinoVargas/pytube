@@ -52,6 +52,7 @@ _PATHS = {
     "skip_back": '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/>',
     "queue": '<path d="M3 6h13M3 12h13M3 18h7"/><path d="m16 15 5 3-5 3z"/>',
     "pin": '<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>',
+    "notes": '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',
     "chevron_left": '<path d="m15 18-6-6 6-6"/>',
     "chevron_right": '<path d="m9 18 6-6-6-6"/>',
     "mini": '<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="11" y="11" width="7" height="6" rx="1"/>',

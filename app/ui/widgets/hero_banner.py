@@ -11,18 +11,18 @@ class HeroBanner(QFrame):
 
     open_requested = Signal(int)
 
-    def __init__(self, tokens, video, thumbnail_path, kicker, meta, button_text, radius=16):
+    def __init__(self, tokens, video, thumbnail_path, kicker, meta, button_text, radius=16, height=HERO_HEIGHT, margin=28):
         super().__init__()
         self.setObjectName("hero")
         self.video = video
         self._radius = radius
         self._pixmap = QPixmap(str(thumbnail_path)) if thumbnail_path else QPixmap()
         self._tokens = tokens
-        self.setFixedHeight(HERO_HEIGHT)
+        self.setFixedHeight(height)
         self.setMinimumWidth(320)
         self.setAccessibleName(f"{kicker}: {video.title}")
         column = QVBoxLayout(self)
-        column.setContentsMargins(28, 24, 28, 24)
+        column.setContentsMargins(margin, 24, margin, 28)
         column.setSpacing(6)
         column.addStretch(1)
         self.kicker_label = QLabel(kicker.upper())

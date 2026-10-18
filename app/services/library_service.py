@@ -21,6 +21,7 @@ class LibraryService(QObject):
     """Regras da biblioteca: salvar, remover, validar o arquivo local e achar miniaturas."""
 
     changed = Signal()
+    notes_changed = Signal(int)  # anotações de um vídeo foram gravadas (não redesenha as páginas: só o índice de notas)
 
     def __init__(self, storage, providers, thumbnails=None):
         super().__init__()
@@ -126,6 +127,7 @@ class LibraryService(QObject):
             return None
         video.notes = (text or "")[:NOTES_LIMIT]
         self.store.update_video(video)
+        self.notes_changed.emit(video_id)
         return video.notes
 
     # -- remover ------------------------------------------------------------

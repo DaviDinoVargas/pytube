@@ -12,12 +12,14 @@ from app.domain.states import video_state
 from app.ui.pages.base import EmptyState, Page
 from app.ui.pages.categories_page import CollectionCard, count_text
 from app.ui.widgets.hero_banner import HeroBanner
+from app.ui.widgets.poster_tile import STREAMING as TILE_STREAMING, WALL as TILE_WALL, PosterTile
 from app.ui.widgets.thumb_row import ThumbRow, link_button, title_label
 from app.ui.widgets.video_card import VideoCard
 from app.ui.widgets.video_grid import VideoGrid
 
 SECTION_LIMIT = 8
 ROW_LIMIT = 14  # itens por fileira no layout Streaming
+HERO_HEIGHT_FULL = 380
 
 
 class VideoPage(Page):
@@ -67,6 +69,29 @@ class VideoPage(Page):
         card.open_requested.connect(self.video_opened)
         card.action_requested.connect(self.video_action)
         return card
+
+    def make_tile(self, video, mode=TILE_STREAMING):
+        """Pôster sem moldura (layouts Streaming e Cinema), com as mesmas ações do cartão."""
+        video = self._library.validate_local(video)
+        watch, fraction = self.watch_info(video)
+        tile = PosterTile(
+            self._tr, self._tokens, video, video_state(video, self._download_status(video.id)), self._library.thumbnail_path(video),
+            can_download=self._can_download(), organize=self._organize, watch=watch, fraction=fraction,
+            can_forget=self._can_forget, mode=mode,
+        )
+        tile.open_requested.connect(self.video_opened)
+        tile.action_requested.connect(self.video_action)
+        return tile
+
+    def make_wall(self, videos):
+        grid = VideoGrid(gap=10)
+        grid.set_cards([self.make_tile(v, TILE_WALL) for v in videos])
+        return grid
+
+    def make_posters(self, videos):
+        grid = VideoGrid(gap=18)
+        grid.set_cards([self.make_tile(v, TILE_STREAMING) for v in videos])
+        return grid
 
     def make_grid(self, videos):
         grid = VideoGrid()
@@ -144,15 +169,29 @@ class HomePage(VideoPage):
     def set_layout(self, profile):
         if profile.home != self._variant:
             self._variant = profile.home
+            self._frame_for_variant()
             self.mark_dirty()
+
+    def _frame_for_variant(self):
+        """Streaming e Cinema abrem sem título de página e com o destaque ou o mural até a borda da janela."""
+        bare = self._variant in (layouts.HOME_STREAMING, layouts.HOME_WALL)
+        self.title.setVisible(not bare)
+        self.subtitle.setVisible(not bare)
+        root = self.layout()
+        root.setContentsMargins(*((0, 0, 0, 0) if bare else (32, 28, 24, 0)))
+        self.body.setContentsMargins(*((0, 0, 0, 24) if bare else (0, 0, 8, 16)))
 
     def render(self, videos):
         self._clear_body()
         self.empty.setVisible(not videos)
         if not videos:
             return
+        self._frame_for_variant()
         if self._variant == layouts.HOME_STREAMING and self._org is not None:
             self._render_streaming()
+            return
+        if self._variant == layouts.HOME_WALL and self._org is not None:
+            self._render_wall()
             return
         sections = [("home.section_recent", videos[:SECTION_LIMIT])]
         downloaded = [v for v in videos if self._library.validate_local(v).local_status == "ok"]
@@ -210,14 +249,43 @@ class HomePage(VideoPage):
         if base is not None:
             rows.append((t("stream.row_because", title=base.title), because, False, None))
         for title, items, rich, category in rows:
-            self.body.addWidget(self._row(title, items[:ROW_LIMIT], rich, category))
+            self.body.addWidget(self._padded(self._row(title, items[:ROW_LIMIT], rich, category)))
         playlists = self._org.playlists()
         if playlists:
-            self.body.addWidget(self._playlist_row(playlists))
+            self.body.addWidget(self._padded(self._playlist_row(playlists)))
         for category in data.categories:
             items = apply_query(LibraryQuery(category_ids=frozenset({category.id})), data)
             if items:
-                self.body.addWidget(self._row(category.name, items[:ROW_LIMIT], False, category))
+                self.body.addWidget(self._padded(self._row(category.name, items[:ROW_LIMIT], False, category)))
+        self.body.addStretch(1)
+
+    @staticmethod
+    def _padded(widget, side=36):
+        """Fileiras têm margem lateral; o destaque do Streaming e o mural do Cinema vão até a borda."""
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(side, 0, side, 0)
+        lay.addWidget(widget)
+        return box
+
+    # -- layout Cinema: mural de pôsteres ----------------------------------------------------------------
+    def _render_wall(self):
+        t = self._tr.t
+        data = self._org.load_data()
+        in_progress = apply_query(SMART_PLAYLISTS["continue"], data)
+        if in_progress:
+            heading = title_label(t("stream.row_continue"))
+            row = ThumbRow(self._tokens, heading, [self.make_tile(v, TILE_WALL) for v in in_progress[:ROW_LIMIT]], None,
+                           t("stream.prev"), t("stream.next"))
+            self.body.addWidget(self._padded(row, 28))
+        everything = apply_query(LibraryQuery(), data)
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(28, 0, 28, 0)
+        column.setSpacing(12)
+        column.addWidget(title_label(t("wall.collection", count=len(everything))))
+        column.addWidget(self.make_wall(everything))
+        self.body.addWidget(box)
         self.body.addStretch(1)
 
     def _hero(self, video, data):
@@ -227,13 +295,13 @@ class HomePage(VideoPage):
         meta = " · ".join(x for x in (video.channel, format_duration(video.duration)) if x)
         hero = HeroBanner(
             self._tokens, video, self._library.thumbnail_path(video), t("stream.featured"), meta, button,
-            radius=self._tokens["radius"]["lg"],
+            radius=0, height=HERO_HEIGHT_FULL, margin=36,  # sem moldura: vai de ponta a ponta, como em um serviço de streaming
         )
         hero.open_requested.connect(self.video_opened)
         return hero
 
     def _row(self, title, items, rich, category):
-        cards = [self.make_card(v) for v in items]
+        cards = [self.make_tile(v, TILE_STREAMING) for v in items]
         if category is not None and category.color:
             heading = title_label(f'<span style="color:{category.color}">●</span> {html.escape(category.name)}', rich=True)
         else:

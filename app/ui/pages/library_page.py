@@ -7,12 +7,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSplitter,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from app.domain.query import SORTS
+from app.ui.widgets.details_panel import DetailsPanel
 from app.ui.widgets.filter_bar import FilterBar
 from app.ui.widgets.library_table import LibraryTable, TableRow
 from app.ui.widgets.video_card import format_added
@@ -51,6 +53,7 @@ class LibraryPage(VideoPage):
 
     key = "library"
     message = Signal(str, bool)
+    selection_count_changed = Signal(int)
 
     def __init__(self, translator, library, tokens, org, state, settings, **kwargs):
         self._org = org
@@ -61,6 +64,9 @@ class LibraryPage(VideoPage):
         self._shown = []
         self._view = settings.library_view
         self._inline_filters = False
+        self._ribbon = False  # layout Gerenciador: faixa de ações sempre visível
+        self._preview_pane = False
+        self._preview = None
         self._table = None
         super().__init__(translator, library, tokens, **kwargs)
 
@@ -134,8 +140,23 @@ class LibraryPage(VideoPage):
         self.done_button = QPushButton()
         self.done_button.setObjectName("primary")
         self.done_button.clicked.connect(self._done_selecting)
+        self.open_button = QPushButton()
+        self.download_button = QPushButton()
+        self.queue_button = QPushButton()
+        self.watched_button = QPushButton()
+        self.ribbon_buttons = (self.open_button, self.download_button, self.queue_button, self.watched_button)
+        for button in self.ribbon_buttons:  # só existem na faixa de ações do layout Gerenciador
+            button.setObjectName("secondary")
+            button.setCursor(Qt.PointingHandCursor)
+            button.hide()
+        self.open_button.clicked.connect(lambda: self._ribbon_each("open", only_first=True))
+        self.download_button.clicked.connect(lambda: self._ribbon_each("download", only_first=True))
+        self.queue_button.clicked.connect(lambda: self._ribbon_each("queue_add"))
+        self.watched_button.clicked.connect(lambda: self._ribbon_each("watch"))
         bulk.addWidget(self.selected_label)
         bulk.addWidget(self.select_all_button)
+        for button in self.ribbon_buttons:
+            bulk.addWidget(button)
         bulk.addStretch(1)
         for widget in (self.categories_button, self.playlist_button, self.remove_button, self.done_button):
             bulk.addWidget(widget)
@@ -188,6 +209,12 @@ class LibraryPage(VideoPage):
         if self._view == "table":
             self._render_table(videos)
             return
+        if self._view in ("wall", "posters"):  # pôsteres sem moldura: mural (Cinema) ou grade com títulos (Streaming)
+            widget = self.make_wall(videos) if self._view == "wall" else self.make_posters(videos)
+            self._apply_selection_mode(widget)
+            self.body.addWidget(widget)
+            self.body.addStretch(1)
+            return
         if self._view == "list":
             widget = RowList()
             widget.set_rows([self._make_row(v) for v in videos])
@@ -224,11 +251,39 @@ class LibraryPage(VideoPage):
         table.horizontalHeader().sectionResized.connect(lambda *_: self._save_header())
         table.horizontalHeader().sectionMoved.connect(lambda *_: self._save_header())
         self._table = table
-        self.body.addWidget(table, 1)  # a tabela ocupa a altura que sobrar
+        self._preview = None
+        if self._preview_pane:
+            self._preview = DetailsPanel(self._tr, self._library, self._organize, with_player=False, tokens=self._tokens)
+            self._preview.setMinimumWidth(280)
+            split = QSplitter(Qt.Horizontal)
+            split.setChildrenCollapsible(False)
+            split.addWidget(table)
+            split.addWidget(self._preview)
+            split.setStretchFactor(0, 1)
+            split.setSizes([900, 320])
+            self.body.addWidget(split, 1)
+            self._update_preview(self._selected)
+        else:
+            self.body.addWidget(table, 1)  # a tabela ocupa a altura que sobrar
 
     def _on_table_selection(self, ids):
         self._selected = set(ids)
         self._update_bulk()
+        self._update_preview(ids)
+
+    def _update_preview(self, ids):
+        """A prévia mostra o item selecionado; com zero ou vários itens, fica vazia."""
+        if self._preview is not None:
+            ids = sorted(ids)
+            self._preview.set_video(self._library.get(ids[0]) if len(ids) == 1 else None)
+
+    def _ribbon_each(self, action, only_first=False):
+        ids = self.selected_ids
+        for video_id in (ids[:1] if only_first else ids):
+            if action == "open":
+                self.video_opened.emit(video_id)
+            else:
+                self.video_action.emit(video_id, action)
 
     def _on_table_action(self, ids, key):
         if key == "remove":
@@ -250,6 +305,11 @@ class LibraryPage(VideoPage):
         card = super().make_card(video)
         card.selection_changed.connect(self._on_selection)
         return card
+
+    def make_tile(self, video, mode="streaming"):
+        tile = super().make_tile(video, mode)
+        tile.selection_changed.connect(self._on_selection)
+        return tile
 
     def _make_row(self, video):
         video = self._library.validate_local(video)
@@ -275,6 +335,7 @@ class LibraryPage(VideoPage):
 
     def _clear_body(self):
         self._table = None
+        self._preview = None
         while self.body.count() > self._fixed_items:  # fixos: barra, chips, ações em lote, estados vazios
             item = self.body.takeAt(self._fixed_items)
             widget = item.widget()
@@ -329,8 +390,17 @@ class LibraryPage(VideoPage):
     def set_layout(self, profile):
         """O layout Gerenciador abre a biblioteca como tabela e com os filtros avançados fixos no topo."""
         self._inline_filters = profile.inline_filters
+        changed = (profile.ribbon, profile.preview_pane) != (self._ribbon, self._preview_pane)
+        self._ribbon, self._preview_pane = profile.ribbon, profile.preview_pane
+        dense = profile.ribbon  # Gerenciador: sem título de página, margens curtas e só a tabela
+        self.title.setVisible(not dense)
+        self.subtitle.setVisible(not dense)
+        self.layout().setContentsMargins(*((12, 10, 12, 0) if dense else (32, 28, 24, 0)))
+        self.layout().setSpacing(2 if dense else 4)
+        for button in (self.grid_button, self.list_button, self.table_button):
+            button.setVisible(not dense)
         view = profile.library_view or self._settings.library_view
-        if view != self._view or self._inline_filters != self.filter_bar.isVisibleTo(self):
+        if view != self._view or changed or self._inline_filters != self.filter_bar.isVisibleTo(self):
             self._view = view
             self._update_controls()
             self.mark_dirty()
@@ -397,7 +467,18 @@ class LibraryPage(VideoPage):
     def _update_bulk(self):
         t = self._tr.t
         n = len(self._selected)
-        self.bulk_bar.setVisible(self._selecting or (self._view == "table" and n > 0))
+        self.bulk_bar.setVisible(self._selecting or self._ribbon or (self._view == "table" and n > 0))
+        self.bulk_bar.setProperty("ribbon", self._ribbon)
+        self.bulk_bar.style().unpolish(self.bulk_bar)
+        self.bulk_bar.style().polish(self.bulk_bar)
+        for button in self.ribbon_buttons:
+            button.setVisible(self._ribbon)
+        self.done_button.setVisible(not self._ribbon)
+        self.open_button.setEnabled(n == 1)
+        self.download_button.setEnabled(n == 1)
+        self.queue_button.setEnabled(n > 0)
+        self.watched_button.setEnabled(n > 0)
+        self.selection_count_changed.emit(n)
         self.selected_label.setText(t("library.selected_one") if n == 1 else t("library.selected_many", count=n))
         for button in (self.categories_button, self.playlist_button, self.remove_button):
             button.setEnabled(n > 0)
@@ -463,6 +544,10 @@ class LibraryPage(VideoPage):
         self.playlist_button.setText(t("bulk.playlist") + " ▾")
         self.remove_button.setText(t("bulk.remove"))
         self.done_button.setText(t("library.select_done"))
+        self.open_button.setText(t("ribbon.open"))
+        self.download_button.setText(t("ribbon.download"))
+        self.queue_button.setText(t("ribbon.queue"))
+        self.watched_button.setText(t("ribbon.watched"))
         self.no_results.retranslate()
         self.no_results_clear.setText(t("filter.clear"))
         self.panel.retranslate()

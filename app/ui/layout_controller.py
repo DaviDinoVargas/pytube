@@ -40,6 +40,7 @@ class LayoutController(QObject):
         for page in window.pages.values():
             page.set_layout(profile)
         self._apply_chrome(window.current_page == "watch")
+        window._sync_tree_selection()
         if go_landing:
             window.show_landing(profile.landing)
         self.changed.emit(key)
@@ -49,11 +50,25 @@ class LayoutController(QObject):
         self._apply_chrome(page_key == "watch")
 
     def _apply_chrome(self, watching):
+        """Mostra só as barras que o layout tem: sidebar/ícones, navegação do topo, barra de link e busca."""
         profile = self.profile
         window = self._window
+        nav = profile.nav_for(watching)
         window.sidebar.set_mode(profile.sidebar_for(watching))
-        window.top_bar.set_compact(profile.topbar == layouts.TOPBAR_COMPACT)
-        window.top_bar.setVisible(not (profile.topbar_hidden_watching and watching))
+        window.top_nav.set_style(profile.topnav_style)
+        window.top_nav.setVisible(nav == layouts.NAV_TOP)
+        window.top_bar.set_mode(profile.topbar)
+        window.top_bar.setVisible(profile.topbar != layouts.TOPBAR_NONE and not (profile.topbar_hidden_watching and watching))
+        window.nav_tree.setVisible(nav == layouts.NAV_TREE)
+        window.compact_bar.setVisible(profile.compact_window)
+        # engrenagem sempre no canto inferior direito: no rodapé comum ou, nos layouts com barra de estado, nela
+        window.status_bar.setVisible(profile.statusbar)
+        window.footer.setVisible(not profile.statusbar)
+        if profile.statusbar:
+            window.status_bar.attach_gear(window.settings_button)
+        else:
+            window._footer_row.addWidget(window.settings_button)
+        window.schedule_status_refresh()
 
     # -- janela compacta ---------------------------------------------------------------------
     def _set_compact_window(self, compact):
@@ -65,6 +80,7 @@ class LayoutController(QObject):
             window.setMinimumSize(COMPACT_MIN)
             window.resize(COMPACT_SIZE)
             self.set_keep_on_top(window.settings.compact_on_top)
+            window.compact_bar.set_pinned(window.settings.compact_on_top)
         elif not compact and self._compact_active:
             self._compact_active = False
             self.set_keep_on_top(False)

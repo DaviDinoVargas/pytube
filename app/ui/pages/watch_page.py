@@ -34,8 +34,10 @@ from app.ui.pages.base import Page
 from app.ui.widgets.flow_layout import FlowLayout
 from app.ui.widgets.details_panel import PANEL_WIDTH, DetailsPanel
 from app.ui.widgets.download_row import status_text
-from app.ui.widgets.library_list import PANE_WIDTH, LibraryList
+from app.ui.widgets.library_list import PANE_WIDTH
+from app.ui.widgets.workspace_dock import WorkspaceDock
 from app.ui.widgets.queue_panel import QueuePanel
+from app.ui.widgets.up_next import PANEL_WIDTH as UP_NEXT_WIDTH, UpNextPanel
 from app.ui.widgets.related_strip import RelatedStrip
 from app.ui.player.player_widget import PlayerWidget
 from app.ui.widgets.video_card import format_added
@@ -72,14 +74,13 @@ class WatchPage(Page):
     message = Signal(str, bool)  # texto, é_erro
     playback_ended = Signal()
     video_opened = Signal(int)  # vídeo escolhido na lista da biblioteca ou nos relacionados
+    video_shown = Signal(str)  # título do vídeo que acabou de ser mostrado (o cabeçalho do layout Compacto o exibe)
     queue_add_requested = Signal(int)
     queue_previous_requested = Signal()
     queue_next_requested = Signal()
     queue_remove_requested = Signal(int)
     queue_order_changed = Signal(list)
     queue_clear_requested = Signal()
-    keep_on_top_toggled = Signal(bool)
-    full_window_requested = Signal()
 
     def __init__(self, translator, library, tokens, downloads, consent, progress, settings, player_options=None, organize=None, org=None, queue=None):
         super().__init__(translator)
@@ -124,23 +125,6 @@ class WatchPage(Page):
         self.details_toggle.setToolButtonStyle(Qt.ToolButtonTextOnly)
         self.details_toggle.toggled.connect(self._on_details_toggled)
         header.addWidget(self.details_toggle)
-        self.pin_button = QToolButton()
-        self.pin_button.setObjectName("toolbarToggle")
-        self.pin_button.setCheckable(True)
-        self.pin_button.setChecked(settings.compact_on_top)
-        self.pin_button.setCursor(Qt.PointingHandCursor)
-        self.pin_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.pin_button.setIconSize(QSize(16, 16))
-        self.pin_button.toggled.connect(self._on_pin_toggled)
-        self.full_button = QToolButton()
-        self.full_button.setObjectName("toolbarToggle")
-        self.full_button.setCursor(Qt.PointingHandCursor)
-        self.full_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
-        self.full_button.clicked.connect(self.full_window_requested)
-        header.addWidget(self.pin_button)
-        header.addWidget(self.full_button)
-        self.pin_button.hide()
-        self.full_button.hide()
         self.header = header
         self.body.addLayout(header)
 
@@ -352,18 +336,30 @@ class WatchPage(Page):
         self.shell = QSplitter(Qt.Horizontal)
         self.shell.setChildrenCollapsible(False)
         self.shell.setHandleWidth(10)
-        self.library_list = LibraryList(translator, tokens, library, org) if org is not None else None
+        self.dock = WorkspaceDock(translator, tokens, library, org) if org is not None else None
+        self.library_list = self.dock.library if self.dock is not None else None
         self.details = DetailsPanel(translator, library, organize)
         self.details.timestamp_requested.connect(lambda: self.details.insert_timestamp(self.player.position))
+        self.details.seek_requested.connect(self.player.seek)
         self.details.folder_requested.connect(self._open_local_folder)
-        if self.library_list is not None:
-            self.library_list.video_opened.connect(self.video_opened)
-            self.shell.addWidget(self.library_list)
+        if self.dock is not None:
+            self.dock.video_opened.connect(self.video_opened)
+            self.dock.queue_remove_requested.connect(self.queue_remove_requested)
+            self.dock.queue_order_changed.connect(self.queue_order_changed)
+            self.dock.queue_clear_requested.connect(self.queue_clear_requested)
+            self.dock.queue_next_requested.connect(self.queue_next_requested)
+            self.dock.queue_previous_requested.connect(self.queue_previous_requested)
+            self.shell.addWidget(self.dock)
         self.shell.addWidget(self.scroll)
+        self.up_next = UpNextPanel(translator, tokens)
+        self.up_next.video_opened.connect(self.video_opened)
+        self.up_next.hide()
+        self.shell.addWidget(self.up_next)
         self.shell.addWidget(self.details)
         self.shell.setStretchFactor(self.shell.indexOf(self.scroll), 1)
         root.addWidget(self.shell, 1)
-        self.library_list and self.library_list.hide()
+        if self.dock is not None:
+            self.dock.hide()
         self.details.hide()
         self._build_cinema_bar(tokens)
 
@@ -421,7 +417,7 @@ class WatchPage(Page):
         self.stage.setProperty("cinema", cinema)
         self.stage.style().unpolish(self.stage)
         self.stage.style().polish(self.stage)
-        self.player.set_cinema(cinema)
+        self.player.set_cinema(cinema or self._profile.watch == layouts.WATCH_STREAMING)
         # clássico: player à esquerda (até a largura máxima); cinema: centralizado, com o máximo de largura que couber
         lead = self.stage_layout.itemAt(0).spacerItem()  # só o cinema centraliza: o espaço da esquerda passa a existir
         lead.changeSize(0, 0, QSizePolicy.Expanding if cinema else QSizePolicy.Fixed, QSizePolicy.Minimum)
@@ -432,7 +428,7 @@ class WatchPage(Page):
         self.stage_layout.setAlignment(self.player, Qt.AlignVCenter if cinema else Qt.AlignTop)
         content_layout = self.body_holder.parentWidget().layout()
         self.body_holder.setMaximumWidth(READING_WIDTH if cinema else 16777215)
-        content_layout.setAlignment(self.body_holder, Qt.AlignHCenter if cinema else Qt.AlignLeft)
+        content_layout.setAlignment(self.body_holder, Qt.AlignHCenter if cinema else Qt.Alignment())
         self.back_button.setVisible(not cinema)
         self.body.setSpacing(0 if cinema else 16)
         spacer = self.layout().itemAt(2).spacerItem()  # o respiro entre o título (oculto) e o conteúdo
@@ -475,17 +471,11 @@ class WatchPage(Page):
         compact = self.compact
         self.info_block.setVisible(not compact)
         self.meta_label.setVisible(not compact)
-        self.pin_button.setVisible(compact)
-        self.full_button.setVisible(compact)
         self.player.set_compact(compact)
         self.title_label.setProperty("compact", compact)
         self.title_label.style().unpolish(self.title_label)
         self.title_label.style().polish(self.title_label)
         self.refresh_queue()
-
-    def _on_pin_toggled(self, checked):
-        self._settings.compact_on_top = checked
-        self.keep_on_top_toggled.emit(checked)
 
     def refresh_queue(self):
         """Mostra a fila: sempre no layout Compacto; nos outros, só quando há algo nela (e nunca no modo cinema)."""
@@ -493,8 +483,12 @@ class WatchPage(Page):
         if queue is None:
             self.queue_panel.hide()
             return
-        self.queue_panel.set_queue(queue.videos(), queue.current)
-        self.queue_panel.setVisible(not self.cinema and (self.compact or len(queue) > 0))
+        videos = queue.videos()
+        self.queue_panel.set_queue(videos, queue.current)
+        if self.dock is not None:
+            self.dock.queue.set_queue(videos, queue.current)
+        self.queue_panel.setVisible(not self.cinema and not self._profile.up_next and (self.compact or len(queue) > 0))
+        self._update_up_next()
 
     def set_layout(self, profile):
         self._profile = profile
@@ -509,7 +503,7 @@ class WatchPage(Page):
     DETAILS_MIN_WIDTH = 1000
     PAGE_MARGINS = {
         layouts.WATCH_STANDARD: (32, 28, 24, 0), layouts.WATCH_WORKSTATION: (14, 12, 14, 0),
-        layouts.WATCH_COMPACT: (10, 8, 10, 0), layouts.WATCH_CINEMA: (0, 0, 0, 0),
+        layouts.WATCH_COMPACT: (10, 8, 10, 0), layouts.WATCH_CINEMA: (0, 0, 0, 0), layouts.WATCH_STREAMING: (28, 18, 20, 0),
     }
 
     def _apply_panes(self):
@@ -521,14 +515,18 @@ class WatchPage(Page):
         show_details = (profile.details_panel and wide >= self.DETAILS_MIN_WIDTH) or (standard and self.details_toggle.isChecked())
         show_list = profile.library_list and self.library_list is not None and wide >= self.LIST_MIN_WIDTH
         self.details.setVisible(show_details)
-        if self.library_list is not None:
-            self.library_list.setVisible(show_list)
+        if self.dock is not None:
+            self.dock.setVisible(show_list)
+        self.up_next.setVisible(profile.up_next and wide >= self.DETAILS_MIN_WIDTH)
         sizes = []
         total = max(self.shell.width(), 900)
-        for widget in (self.library_list, self.scroll, self.details):
+        for widget in (self.dock, self.scroll, self.up_next, self.details):
             if widget is None:
                 continue
-            sizes.append(PANE_WIDTH if widget is self.library_list else PANEL_WIDTH + 20 if widget is self.details else total)
+            sizes.append(
+                PANE_WIDTH if widget is self.dock else PANEL_WIDTH + 20 if widget is self.details
+                else UP_NEXT_WIDTH if widget is self.up_next else total
+            )
         self.shell.setSizes(sizes)
 
     def _on_details_toggled(self, checked):
@@ -557,20 +555,34 @@ class WatchPage(Page):
 
     def _update_related(self):
         video = self._video
-        if video is None or self._org is None or not self._profile.related or not self._library.ready:
+        ready = video is not None and self._org is not None and self._library.ready
+        if not ready or not self._profile.related:
             self.related.set_videos([], self._library.thumbnail_path)
+        else:
+            self.related.set_videos(recommend.related(video, self._org.load_data()), self._library.thumbnail_path)
+        self._update_up_next()
+
+    def _update_up_next(self):
+        if not self._profile.up_next:
             return
-        self.related.set_videos(recommend.related(video, self._org.load_data()), self._library.thumbnail_path)
+        video = self._video
+        queued = self._queue.videos() if self._queue is not None else []
+        related = []
+        if video is not None and self._org is not None and self._library.ready:
+            queued_ids = {v.id for v in queued}
+            related = [v for v in recommend.related(video, self._org.load_data(), 14) if v.id not in queued_ids]
+        self.up_next.set_items(queued, related, self._library.thumbnail_path, video.id if video is not None else None)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self._profile.library_list or self._profile.details_panel:
+        if self._profile.library_list or self._profile.details_panel or self._profile.up_next:
             self._apply_panes()
         if self.cinema:
             self._layout_cinema()  # o vídeo usa a janela toda
             return
-        # o player ocupa no máximo ~62% da altura: título, ações e download continuam à vista
-        self.player.set_max_height(self.height() * 0.62)
+        # o player ocupa no máximo ~62% da altura (80% no Streaming, onde o texto fica ao lado): título e ações continuam à vista
+        factor = 0.8 if self._profile.watch == layouts.WATCH_STREAMING else 0.62
+        self.player.set_max_height(self.height() * factor)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -701,6 +713,7 @@ class WatchPage(Page):
         info = self._info
         self.title_label.setText(info.title)
         self.cinema_title.setText(info.title)
+        self.video_shown.emit(info.title)
         parts = [p for p in (info.channel, format_duration(info.duration)) if p]
         if self._video is not None:
             added = format_added(self._video.added_at, self._tr.language)
@@ -996,13 +1009,13 @@ class WatchPage(Page):
         self.player.set_tokens(tokens)
         self.back_button.setIcon(icon("back", tokens["text_primary"], 18))
         self.cinema_back.setIcon(icon("back", "#FFFFFF", 18))
-        self.pin_button.setIcon(icon("pin", tokens["text_primary"], 16))
         self.queue_button.setIcon(icon("queue", tokens["text_primary"], 18))
         self.queue_panel.set_tokens(tokens)
+        self.up_next.set_tokens(tokens)
         self.browser_button.setIcon(icon("external", tokens["text_primary"], 18))
         self.related.set_tokens(tokens)
-        if self.library_list is not None:
-            self.library_list.set_tokens(tokens)
+        if self.dock is not None:
+            self.dock.set_tokens(tokens)
         if self._info is not None:
             self._render_actions()
         else:
@@ -1022,20 +1035,15 @@ class WatchPage(Page):
         self.details_toggle.setAccessibleName(t("details.toggle"))
         self.empty_label.setText(t("watch.empty"))
         self.queue_button.setText(t("queue.button"))
-        self.pin_button.setText(" " + t("compact.pin"))
-        self.pin_button.setToolTip(t("compact.pin_tip"))
-        self.pin_button.setAccessibleName(t("compact.pin_tip"))
-        self.full_button.setText(t("compact.full"))
-        self.full_button.setToolTip(t("compact.full_tip"))
-        self.full_button.setAccessibleName(t("compact.full_tip"))
         self.queue_panel.retranslate()
+        self.up_next.retranslate()
         self.cinema_back.setText(" " + t("watch.back"))
         self.cinema_info.setText(t("watch.info"))
         self.cinema_info.setToolTip(t("watch.info_tip"))
         self.cinema_info.setAccessibleName(t("watch.info_tip"))
         self.details.retranslate()
-        if self.library_list is not None:
-            self.library_list.retranslate()
+        if self.dock is not None:
+            self.dock.retranslate()
         self.player.retranslate()
         if self._info is not None:
             self._render()

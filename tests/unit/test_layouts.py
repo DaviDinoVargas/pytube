@@ -14,19 +14,39 @@ def test_unknown_layout_falls_back_to_classic():
     assert layouts.profile_for("nope").key == "classic"
 
 
-def test_each_layout_has_its_own_structure():
+def test_each_layout_has_its_own_anatomy():
     p = layouts.PROFILES
-    assert p["classic"].sidebar == "full" and p["classic"].related and not p["classic"].details_panel
-    assert p["streaming"].home == "streaming"
-    assert p["cinema"].watch == "cinema" and p["cinema"].sidebar_for(True) == "hidden" and p["cinema"].topbar_hidden_watching
-    assert p["manager"].library_view == "table" and p["manager"].landing == "library"
-    assert p["workstation"].library_list and p["workstation"].details_panel and p["workstation"].watch == "workstation"
-    assert p["compact"].compact_window and p["compact"].sidebar == "hidden" and p["compact"].topbar == "compact"
+    assert p["classic"].nav == "sidebar" and p["classic"].topbar == "full" and p["classic"].related and not p["classic"].up_next
+    # streaming: sem sidebar nem barra de link; abas no topo, pôsteres e coluna "a seguir"
+    assert p["streaming"].nav == "top" and p["streaming"].topbar == "none" and p["streaming"].up_next and p["streaming"].home == "streaming"
+    assert p["streaming"].library_view == "posters" and p["streaming"].watch == "streaming"
+    # cinema: navegação translúcida que some ao assistir, mural e player cheio
+    assert p["cinema"].nav == "top" and p["cinema"].nav_for(True) == "none" and p["cinema"].topnav_style == "cinema"
+    assert p["cinema"].home == "wall" and p["cinema"].library_view == "wall" and p["cinema"].watch == "cinema"
+    # gerenciador: árvore, faixa de ações, tabela, prévia e barra de estado; páginas de lista viram consultas
+    m = p["manager"]
+    assert m.nav == "tree" and m.ribbon and m.statusbar and m.preview_pane and m.library_view == "table" and m.inline_filters
+    assert m.redirect("home") == "library" and m.redirect("downloaded") == "library" and m.redirect("settings") is None
+    # estação: barra de atividades, painéis, notas e barra de estado
+    w = p["workstation"]
+    assert w.nav == "icons" and w.library_list and w.details_panel and w.statusbar and w.watch == "workstation" and w.topbar == "slim"
+    # compacto: janela pequena sem nenhuma das barras comuns
+    c = p["compact"]
+    assert c.compact_window and c.nav == "none" and c.topbar == "none" and c.watch == "compact" and not c.statusbar
 
 
-def test_sidebar_for_defaults_to_the_same_mode_when_watching():
-    assert layouts.PROFILES["streaming"].sidebar_for(True) == "icons"
-    assert layouts.PROFILES["cinema"].sidebar_for(False) == "icons"
+def test_no_two_layouts_share_the_same_anatomy():
+    keys = ("nav", "topbar", "topnav_style", "statusbar", "ribbon", "home", "library_view", "watch", "up_next", "preview_pane",
+            "details_panel", "library_list", "compact_window", "inline_filters")
+    shapes = [tuple(getattr(profile, k) for k in keys) for profile in layouts.PROFILES.values()]
+    assert len(set(shapes)) == len(shapes)
+
+
+def test_sidebar_mode_is_derived_from_the_navigation():
+    p = layouts.PROFILES
+    assert p["classic"].sidebar_for(False) == "full" and p["workstation"].sidebar_for(False) == "icons"
+    for key in ("streaming", "cinema", "manager", "compact"):
+        assert p[key].sidebar_for(False) == "hidden"
 
 
 def test_setting_persists_and_ignores_garbage(tmp_path):

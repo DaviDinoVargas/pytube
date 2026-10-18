@@ -23,9 +23,9 @@ class FilterBar(QFrame):
         self._fields = []  # (rótulo, widget, chave de texto)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 10, 14, 10)
+        outer.setContentsMargins(10, 6, 10, 6)
         box = QWidget()
-        self._flow = FlowLayout(box, 14, 8)
+        self._flow = FlowLayout(box, 10, 6)
         outer.addWidget(box)
 
         self.state_combo = self._combo("filter.state")
@@ -74,7 +74,8 @@ class FilterBar(QFrame):
 
     def _combo(self, label_key):
         combo = QComboBox()
-        combo.setMinimumWidth(130)
+        combo.setMinimumWidth(110)
+        combo.setMaximumWidth(170)
         combo.activated.connect(lambda _i: self._emit())
         self._field(label_key, combo)
         return combo

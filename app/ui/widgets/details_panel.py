@@ -1,13 +1,16 @@
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
-    QFormLayout, QFrame, QHBoxLayout, QLabel, QMenu, QPlainTextEdit, QPushButton, QToolButton, QVBoxLayout, QWidget,
+    QFormLayout, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QPlainTextEdit, QPushButton, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from app.domain import states
+from app.domain.notes import parse_markers
 from app.domain.states import format_duration, video_state
 from app.services.library_service import NOTES_LIMIT
 from app.services.storage_service import format_bytes
-from app.ui.widgets.video_card import format_added
+from app.ui.widgets.video_card import cover_pixmap, format_added
 
 SAVE_DELAY_MS = 700
 PANEL_WIDTH = 290
@@ -18,11 +21,14 @@ class DetailsPanel(QFrame):
     sempre no vídeo certo (mesmo se você trocar de vídeo logo em seguida)."""
 
     timestamp_requested = Signal()  # pede o tempo atual do player para inserir nas notas
+    seek_requested = Signal(float)  # clique num marcador: leva o player até aquele ponto
     folder_requested = Signal()
 
-    def __init__(self, translator, library, organize=None):
+    def __init__(self, translator, library, organize=None, with_player=True, tokens=None):
         super().__init__()
         self.setObjectName("detailsPanel")
+        self._with_player = with_player  # sem player ao lado (prévia do Gerenciador), não há "tempo atual" para inserir
+        self._tokens = tokens
         self.setMinimumWidth(PANEL_WIDTH - 40)
         self._tr = translator
         self._library = library
@@ -34,6 +40,10 @@ class DetailsPanel(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(16, 14, 16, 14)
         column.setSpacing(10)
+        self.thumb = QLabel()  # miniatura: só a prévia do Gerenciador a usa
+        self.thumb.setAlignment(Qt.AlignCenter)
+        self.thumb.hide()
+        column.addWidget(self.thumb)
         self.heading = QLabel()
         self.heading.setObjectName("groupTitle")
         column.addWidget(self.heading)
@@ -98,6 +108,20 @@ class DetailsPanel(QFrame):
         self.status_label = QLabel()
         self.status_label.setObjectName("cardMeta")
         column.addWidget(self.status_label)
+        self.markers_title = QLabel()
+        self.markers_title.setObjectName("groupTitle")
+        self.markers = QListWidget()
+        self.markers.setObjectName("markersList")
+        self.markers.setFrameShape(QFrame.NoFrame)
+        self.markers.setMaximumHeight(130)
+        self.markers.itemClicked.connect(self._marker_clicked)
+        self.markers.itemActivated.connect(self._marker_clicked)
+        self.markers_hint = QLabel()
+        self.markers_hint.setObjectName("cardMeta")
+        self.markers_hint.setWordWrap(True)
+        for widget in (self.markers_title, self.markers, self.markers_hint):
+            widget.setVisible(with_player)
+            column.addWidget(widget)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -145,9 +169,24 @@ class DetailsPanel(QFrame):
         self.notes.setPlainText(video.notes if saved else "")
         self.notes.setEnabled(saved)
         self.timestamp_button.setEnabled(saved)
+        self.timestamp_button.setVisible(self._with_player)
+        self._fill_thumb(video)
         self.status_label.setText("" if saved else t("details.save_to_take_notes"))
         self._dirty = False
         self._loading = False
+
+    def _fill_thumb(self, video):
+        if self._tokens is None or video is None:
+            self.thumb.hide()
+            return
+        width = max(200, self.width() - 32)
+        self.thumb.setPixmap(cover_pixmap(self._library.thumbnail_path(video), width, int(width * 9 / 16), 10, self._tokens))
+        self.thumb.setFixedHeight(int(width * 9 / 16))
+        self.thumb.show()
+
+    def set_tokens(self, tokens):
+        self._tokens = tokens
+        self._fill_thumb(self._video)
 
     def _categories_text(self):
         if self._video is None or self._organize is None:
@@ -181,7 +220,23 @@ class DetailsPanel(QFrame):
             self._dirty = True
 
     # -- anotações -------------------------------------------------------------------------
+    def _refresh_markers(self):
+        if not self._with_player:
+            return
+        marks = parse_markers(self.notes.toPlainText()) if self._video is not None else []
+        self.markers.clear()
+        for mark in marks:
+            item = QListWidgetItem(f"{format_duration(mark.seconds) or '0:00'}   {mark.label}".rstrip())
+            item.setData(Qt.UserRole, mark.seconds)
+            self.markers.addItem(item)
+        self.markers.setVisible(bool(marks))
+        self.markers_hint.setVisible(not marks and self._video is not None)
+
+    def _marker_clicked(self, item):
+        self.seek_requested.emit(float(item.data(Qt.UserRole)))
+
     def _on_text_changed(self):
+        self._refresh_markers()
         if self._loading or self._video is None:
             return
         self._dirty = True
@@ -224,6 +279,8 @@ class DetailsPanel(QFrame):
         self.categories_menu_button.setText(t("details.edit"))
         self.notes_title.setText(t("details.notes").upper())
         self.timestamp_button.setText(t("details.insert_time"))
+        self.markers_title.setText(t("details.markers").upper())
+        self.markers_hint.setText(t("details.no_markers"))
         self.notes.setPlaceholderText(t("details.notes_placeholder", limit=NOTES_LIMIT))
         self.notes.setAccessibleName(t("details.notes"))
         if self._video is not None or hasattr(self, "name_label"):

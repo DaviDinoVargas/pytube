@@ -16,7 +16,7 @@ class TopBar(QFrame):
         self.setObjectName("topbar")
         self._tr = translator
         self._tokens = tokens
-        self._compact = False
+        self._mode = "full"
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(20, 12, 20, 8)
@@ -24,13 +24,6 @@ class TopBar(QFrame):
 
         row = QHBoxLayout()
         row.setSpacing(12)
-        self.menu_button = QToolButton()  # só no layout Compacto, onde não há sidebar
-        self.menu_button.setObjectName("iconButton")
-        self.menu_button.setPopupMode(QToolButton.InstantPopup)
-        self.menu_button.setCursor(Qt.PointingHandCursor)
-        self.menu_button.setIconSize(QSize(20, 20))
-        self.menu_button.hide()
-        row.addWidget(self.menu_button)
         self.url_input = QLineEdit()
         self.url_input.setClearButtonEnabled(True)
         self.url_input.setMinimumWidth(280)
@@ -63,13 +56,15 @@ class TopBar(QFrame):
         )
         self.retranslate()
 
-    def set_compact(self, compact):
-        """Layout compacto: só o campo do link e o botão; a busca da biblioteca sai e as margens encolhem."""
-        self._compact = compact
-        self.search_input.setVisible(not compact)
-        self.menu_button.setVisible(compact)
-        self.url_input.setMinimumWidth(120 if compact else 280)
-        self.layout().setContentsMargins(*((10, 8, 10, 6) if compact else (20, 12, 20, 8)))
+    def set_mode(self, mode):
+        """'full' (link + busca) ou 'slim' (uma linha enxuta, estilo barra de comandos)."""
+        self._mode = mode
+        slim = mode == "slim"
+        self.setProperty("slim", slim)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.layout().setContentsMargins(*((12, 6, 12, 6) if slim else (20, 12, 20, 8)))
+        self.url_input.setMinimumWidth(220 if slim else 280)
 
     def focus_url(self):
         self.url_input.setFocus()
@@ -81,7 +76,6 @@ class TopBar(QFrame):
 
     def set_tokens(self, tokens):
         self._tokens = tokens
-        self.menu_button.setIcon(icon("panel", tokens["text_primary"], 20))
         self._url_action.setIcon(icon("link", tokens["text_secondary"], 18))
         self._search_action.setIcon(icon("search", tokens["text_secondary"], 18))
 
@@ -90,8 +84,6 @@ class TopBar(QFrame):
         self.url_input.setPlaceholderText(t("topbar.url_placeholder"))
         self.open_button.setText(t("topbar.open"))
         self.search_input.setPlaceholderText(t("topbar.search_placeholder"))
-        self.menu_button.setToolTip(t("compact.menu"))
-        self.menu_button.setAccessibleName(t("compact.menu"))
         self.url_input.setAccessibleName(t("topbar.url_placeholder"))
         self.search_input.setAccessibleName(t("topbar.search_placeholder"))
         for field in (self.url_input, self.search_input):

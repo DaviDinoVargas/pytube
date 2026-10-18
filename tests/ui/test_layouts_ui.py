@@ -76,18 +76,29 @@ def test_landing_page_of_each_layout(w):
     assert w.current_page == "home"
 
 
-def test_sidebar_follows_the_layout(w):
-    assert w.sidebar.mode == "full" and not w.sidebar.collapsed
-    choose(w, "streaming")
-    assert w.sidebar.mode == "icons" and w.sidebar.collapsed
-    choose(w, "compact")
-    assert w.sidebar.isHidden()
+def test_navigation_follows_the_layout(w):
+    assert w.sidebar.mode == "full" and not w.sidebar.collapsed and w.top_nav.isHidden() and w.nav_tree.isHidden()
+    choose(w, "streaming")  # abas no topo, nada de sidebar
+    assert w.sidebar.isHidden() and not w.top_nav.isHidden() and w.top_bar.isHidden()
+    choose(w, "workstation")  # barra de atividades (ícones)
+    assert w.sidebar.mode == "icons" and w.sidebar.collapsed and w.top_nav.isHidden()
+    choose(w, "manager")  # árvore
+    assert w.sidebar.isHidden() and not w.nav_tree.isHidden() and not w.status_bar.isHidden()
+    choose(w, "compact")  # só o cabeçalho da janela pequena
+    assert w.sidebar.isHidden() and w.top_bar.isHidden() and not w.compact_bar.isHidden()
     choose(w, "classic")
-    assert w.sidebar.mode == "full" and not w.sidebar.isHidden()
+    assert w.sidebar.mode == "full" and not w.sidebar.isHidden() and w.compact_bar.isHidden() and w.status_bar.isHidden()
+
+
+def test_gear_stays_at_the_bottom_right_in_every_layout(w):
+    for key in ("classic", "streaming", "cinema", "manager", "workstation", "compact"):
+        choose(w, key)
+        owner = w.status_bar if w.layouts.profile.statusbar else w.footer
+        assert w.settings_button.parentWidget() is owner and not owner.isHidden(), key
 
 
 def test_icons_sidebar_can_be_peeked_open_without_changing_the_saved_preference(w, settings):
-    choose(w, "streaming")
+    choose(w, "workstation")
     w.sidebar._toggle.click()
     assert not w.sidebar.collapsed and settings.sidebar_collapsed is False
     w.sidebar._toggle.click()
@@ -96,7 +107,7 @@ def test_icons_sidebar_can_be_peeked_open_without_changing_the_saved_preference(
 
 def test_user_collapse_preference_is_kept_through_layout_changes(w, settings):
     w.sidebar.set_collapsed(True)
-    choose(w, "streaming")
+    choose(w, "workstation")
     choose(w, "classic")
     assert w.sidebar.collapsed and settings.sidebar_collapsed is True
 
@@ -214,7 +225,7 @@ def test_workstation_shows_list_player_and_details_at_once(station):
     wp = station.watch_page
     a = add(station, 1, "Aula 1")
     station.open_saved_video(a.id)
-    assert not wp.library_list.isHidden() and not wp.details.isHidden()
+    assert not wp.dock.isHidden() and not wp.details.isHidden()
     assert wp.details.video.id == a.id and wp.details.name_label.text() == "Aula 1"
     assert wp.library_list.list.count() == 1
 
@@ -224,11 +235,11 @@ def test_workstation_starts_empty_and_panes_hide_on_narrow_windows(station):
     assert station.current_page == "watch" and wp.stack.currentIndex() == 3
     assert wp.details.video is None and not wp.details.notes.isEnabled()
     station.resize(1100, 800)
-    assert wp.library_list.isHidden() and not wp.details.isHidden()
+    assert wp.dock.isHidden() and not wp.details.isHidden()
     station.resize(940, 800)
     assert wp.details.isHidden()
     station.resize(1400, 850)
-    assert not wp.library_list.isHidden() and not wp.details.isHidden()
+    assert not wp.dock.isHidden() and not wp.details.isHidden()
 
 
 def test_clicking_the_list_opens_the_video_in_the_center(station):
@@ -317,12 +328,12 @@ def start(w, i=1):
     return v
 
 
-def test_cinema_hides_sidebar_and_top_bar_only_while_watching(cinema):
-    assert cinema.sidebar.mode == "icons" and not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+def test_cinema_has_no_sidebar_and_its_top_navigation_goes_away_while_watching(cinema):
+    assert cinema.sidebar.isHidden() and not cinema.top_nav.isHidden() and cinema.top_nav.property("navStyle") == "cinema"
     start(cinema)
-    assert cinema.sidebar.isHidden() and cinema.top_bar.isHidden()
+    assert cinema.sidebar.isHidden() and cinema.top_nav.isHidden() and cinema.top_bar.isHidden()
     cinema.show_page("library")
-    assert not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+    assert not cinema.top_nav.isHidden()
 
 
 def test_cinema_player_fills_the_window_on_a_black_stage(cinema):
@@ -381,7 +392,7 @@ def test_leaving_cinema_restores_the_standard_watch_page(cinema):
     cinema.open_saved_video(1)
     wp = cinema.watch_page
     assert wp.player.maximumWidth() <= 1000 and wp.stage.property("cinema") is False
-    assert not wp.back_button.isHidden() and not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden()
+    assert not wp.back_button.isHidden() and not cinema.sidebar.isHidden() and not cinema.top_bar.isHidden() and cinema.top_nav.isHidden()
 
 
 def test_info_button_scrolls_to_the_details_below_the_video_and_back(cinema):
@@ -498,7 +509,7 @@ def test_selecting_rows_shows_the_bulk_bar_and_bulk_remove_asks_once(manager, mo
     a, b, c = add(manager, 1), add(manager, 2), add(manager, 3)
     page = manager.pages["library"]
     page.refresh()
-    assert page.bulk_bar.isHidden()
+    assert not page.bulk_bar.isHidden() and not page.open_button.isEnabled()  # a faixa de ações existe, mas sem seleção está inerte
     table = table_of(manager)
     table.select_ids([a.id, b.id])
     assert page.selected_ids == [a.id, b.id] and not page.bulk_bar.isHidden()
