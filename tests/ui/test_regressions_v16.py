@@ -147,3 +147,24 @@ def test_window_translucency_toggles(qtbot):
     assert set_window_translucent(win, False) is True
     assert not win.testAttribute(Qt.WA_TranslucentBackground) and win.isVisible()
     win.close()
+
+
+def test_system_blur_is_a_safe_noop_outside_windows(qtbot):
+    import sys
+
+    from PySide6.QtWidgets import QMainWindow
+
+    from app.styles.translucency import enable_system_blur
+
+    win = QMainWindow()
+    qtbot.addWidget(win)
+    if not sys.platform.startswith("win"):
+        assert enable_system_blur(win, True) is False
+        assert enable_system_blur(win, False) is False
+
+
+def test_gray_glass_window_is_translucent_but_panels_stay_readable():
+    t = THEMES["frost"]
+    assert t["translucent"] is True
+    assert int(t["bg_start"].strip("rgba()").split(",")[-1]) < 200  # dá para ver o que está atrás
+    assert int(t["surface"].strip("rgba()").split(",")[-1]) > 100  # mas os painéis escurecem o suficiente para ler

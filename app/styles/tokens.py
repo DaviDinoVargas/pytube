@@ -205,14 +205,14 @@ GLASS = _theme(
 # 3b. Vidro cinza (estilo "Liquid Glass"): a janela inteira é translúcida e deixa ver a área de trabalho por trás
 FROST = _theme(
     "dark",
-    background="#3A3D44", bg_start="rgba(16, 18, 24, 205)", bg_end="rgba(30, 34, 42, 212)",
-    surface="rgba(255, 255, 255, 16)", sidebar_bg="rgba(255, 255, 255, 14)", topbar_bg="rgba(255, 255, 255, 12)",
-    input_bg="rgba(255, 255, 255, 18)", surface_elevated="#464950", surface_hover="rgba(255, 255, 255, 30)",
+    background="#3A3D44", bg_start="rgba(16, 18, 24, 172)", bg_end="rgba(30, 34, 42, 180)",
+    surface="rgba(8, 10, 14, 150)", sidebar_bg="rgba(8, 10, 14, 140)", topbar_bg="rgba(8, 10, 14, 130)",
+    input_bg="rgba(8, 10, 14, 160)", surface_elevated="#464950", surface_hover="rgba(255, 255, 255, 16)",
     text_primary="#FFFFFF", text_secondary="#F4F6FA", text_on_accent="#0B1220",
     border="rgba(255, 255, 255, 80)", accent="#D7E6FF", accent_hover="#EBF3FF", accent_soft="rgba(215, 230, 255, 56)",
     success="#7EE2B8", warning="#FFD479", error="#FFC2C2",
     radius={"sm": 14, "md": 20, "lg": 28},
-    downloaded_bg="rgba(20, 90, 60, 90)", downloaded_border="#7EE2B8",
+    downloaded_bg="rgba(20, 90, 60, 150)", downloaded_border="#7EE2B8",
 )
 
 # 4. Relevo suave: tudo da mesma cor, formas separadas por luz e sombra
