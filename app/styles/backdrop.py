@@ -103,14 +103,13 @@ def paint_backdrop(p, rect, t):
             y += 3
     elif kind == PAPER:
         p.drawTiledPixmap(rect.toRect(), _noise_tile(light))
-    elif kind == FROST:  # vidro líquido: brilho de luz que atravessa o vidro, grão fosco e uma borda de luz no topo
+    elif kind == FROST:  # vidro líquido: brilho de luz que atravessa o vidro e uma borda de luz no topo (sem grão: o fosco é só o do sistema)
         sheen = QLinearGradient(rect.topLeft(), rect.bottomRight())
         sheen.setColorAt(0, QColor(255, 255, 255, 46))
         sheen.setColorAt(0.35, QColor(255, 255, 255, 6))
         sheen.setColorAt(0.65, QColor(255, 255, 255, 0))
         sheen.setColorAt(1, QColor(255, 255, 255, 22))
         p.fillRect(rect, QBrush(sheen))
-        p.drawTiledPixmap(rect.toRect(), _noise_tile(False))
         edge = QLinearGradient(rect.topLeft(), rect.topRight())
         edge.setColorAt(0, QColor(255, 255, 255, 0))
         edge.setColorAt(0.5, QColor(255, 255, 255, 120))

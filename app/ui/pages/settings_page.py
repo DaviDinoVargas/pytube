@@ -28,6 +28,7 @@ class SettingsPage(Page):
     language_selected = Signal(str)
     theme_selected = Signal(str)
     layout_selected = Signal(str)
+    glass_blur_selected = Signal(str)
     change_storage_requested = Signal()
     open_storage_requested = Signal()
 
@@ -88,6 +89,19 @@ class SettingsPage(Page):
         appearance.layout().addWidget(self.theme_title)
         appearance.layout().addWidget(self.theme_hint)
         appearance.layout().addWidget(swatches)
+        self.glass_label = QLabel()
+        self.glass_label.setObjectName("fieldLabel")
+        self.glass_combo = QComboBox()
+        for level in ("none", "light", "strong"):
+            self.glass_combo.addItem("", level)
+        if settings is not None:
+            self.glass_combo.setCurrentIndex(self.glass_combo.findData(settings.glass_blur))
+        self.glass_combo.currentIndexChanged.connect(lambda _i: self.glass_blur_selected.emit(self.glass_combo.currentData()))
+        glass_row = QHBoxLayout()
+        glass_row.addWidget(self.glass_label)
+        glass_row.addWidget(self.glass_combo)
+        glass_row.addStretch(1)
+        appearance.layout().addLayout(glass_row)
 
         self.layout_title = QLabel()
         self.layout_title.setObjectName("groupTitle")
@@ -225,6 +239,10 @@ class SettingsPage(Page):
         self.language_combo.setAccessibleName(t("settings.language"))
         self.theme_title.setText(t("settings.theme").upper())
         self.theme_hint.setText(t("settings.theme_hint"))
+        self.glass_label.setText(t("settings.glass_blur"))
+        self.glass_combo.setAccessibleName(t("settings.glass_blur"))
+        for i, level in enumerate(("none", "light", "strong")):
+            self.glass_combo.setItemText(i, t(f"settings.glass_blur_{level}"))
         for name, swatch in self.theme_buttons.items():
             swatch.set_label(t(f"theme.{name}"))
         self.layout_title.setText(t("settings.layout").upper())

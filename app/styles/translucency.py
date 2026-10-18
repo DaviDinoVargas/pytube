@@ -26,7 +26,7 @@ def set_window_translucent(window, on):
     window.setAutoFillBackground(False)
     if visible:
         window.show()
-        enable_system_blur(window, on)
+        enable_system_blur(window, on, getattr(window, "glass_blur_level", "light"))
     return True
 
 
@@ -62,21 +62,25 @@ def _dwm_backdrop(hwnd, on):
     return dwm.DwmSetWindowAttribute(hwnd, 38, byref(c_int(3 if on else 1)), 4) == 0  # DWMWA_SYSTEMBACKDROP_TYPE
 
 
-def enable_system_blur(window, on):
-    """Desfoque do que está atrás da janela. Sem efeito, e sem erro, fora do Windows. Devolve True se o sistema aceitou."""
+def enable_system_blur(window, on, level="light"):
+    """Desfoque do que está atrás da janela. `level`: 'none' (só transparente), 'light' (desfoque simples) ou 'strong'
+    (acrílico, mais fosco). Sem efeito, e sem erro, fora do Windows. Devolve True se o sistema aceitou."""
     if not sys.platform.startswith("win"):
         return False
     try:
         hwnd = int(window.winId())
-        if not on:
+        if not on or level == "none":
             _accent(hwnd, ACCENT_DISABLED, 0)
             _dwm_backdrop(hwnd, False)
             return True
-        # tom quase transparente (ABGR): quem escurece o vidro é o desenho do próprio tema
-        if _accent(hwnd, ACCENT_ACRYLIC, 0x14181410):
+        if level == "strong":
+            # tom quase transparente (ABGR): quem escurece o vidro é o desenho do próprio tema
+            if _accent(hwnd, ACCENT_ACRYLIC, 0x14181410):
+                return True
+            return _dwm_backdrop(hwnd, True)
+        # leve: desfoque simples, sem o grão nem o tom do acrílico
+        if _accent(hwnd, ACCENT_BLURBEHIND, 0):
             return True
-        if _dwm_backdrop(hwnd, True):
-            return True
-        return _accent(hwnd, ACCENT_BLURBEHIND, 0)
+        return _accent(hwnd, ACCENT_ACRYLIC, 0x00000000)
     except Exception:  # noqa: BLE001  versão do Windows sem suporte: segue só com a transparência
         return False

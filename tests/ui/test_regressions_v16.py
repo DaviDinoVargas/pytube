@@ -173,3 +173,29 @@ def test_gray_glass_window_is_translucent_but_panels_stay_readable():
     assert t["translucent"] is True
     assert int(t["bg_start"].strip("rgba()").split(",")[-1]) < 200  # dá para ver o que está atrás
     assert int(t["surface"].strip("rgba()").split(",")[-1]) > 100  # mas os painéis escurecem o suficiente para ler
+
+
+def test_glass_blur_setting_defaults_to_light_and_is_chosen_in_settings(window_factory, settings):
+    assert settings.glass_blur == "light"
+    w = window_factory()
+    combo = w.settings_page.glass_combo
+    assert [combo.itemData(i) for i in range(combo.count())] == ["none", "light", "strong"]
+    assert combo.currentData() == "light" and combo.itemText(0).startswith("Nenhum")
+    combo.setCurrentIndex(combo.findData("none"))
+    assert settings.glass_blur == "none" and w.glass_blur_level == "none"
+    settings.glass_blur = "invalido"
+    assert settings.glass_blur == "light"
+
+
+def test_gray_glass_has_no_grain_so_it_is_not_overly_frosted():
+    from PySide6.QtGui import QImage, QPainter
+
+    from app.styles.backdrop import paint_backdrop
+
+    image = QImage(120, 90, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    p = QPainter(image)
+    paint_backdrop(p, image.rect(), THEMES["frost"])
+    p.end()
+    inner = {image.pixelColor(x, 40).rgba() for x in range(30, 90, 3)}
+    assert len(inner) <= 25  # gradiente suave, sem ruído por pixel

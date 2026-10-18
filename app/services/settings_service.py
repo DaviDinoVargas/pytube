@@ -45,6 +45,16 @@ class SettingsService:
         self._s.setValue("general/layout", value)
 
     @property
+    def glass_blur(self):
+        """Desfoque do que está atrás do Vidro cinza: 'none' (só transparente), 'light' ou 'strong' (acrílico)."""
+        value = self._s.value("general/glass_blur", "light")
+        return value if value in ("none", "light", "strong") else "light"
+
+    @glass_blur.setter
+    def glass_blur(self, value):
+        self._s.setValue("general/glass_blur", value)
+
+    @property
     def queue_ids(self):
         """Fila de reprodução: ids dos vídeos, na ordem."""
         raw = str(self._s.value("queue/ids", "") or "")

@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         tokens = theme.tokens
+        self.glass_blur_level = settings.glass_blur
         set_window_translucent(self, tokens["translucent"])  # antes de aparecer: a janela nativa já nasce translúcida
         root = BackdropWidget(tokens)  # desenha o fundo do tema (gradiente + manchas, grade, papel…)
         self.backdrop = root
@@ -130,6 +131,7 @@ class MainWindow(QMainWindow):
         self.settings_page.language_selected.connect(self._on_language)
         self.settings_page.theme_selected.connect(self._on_theme)
         self.settings_page.layout_selected.connect(self._on_layout)
+        self.settings_page.glass_blur_selected.connect(self.set_glass_blur)
         self._build_settings_sections()
         self.settings_page.change_storage_requested.connect(self.change_storage)
         self.settings_page.open_storage_requested.connect(self._open_storage_folder)
@@ -701,7 +703,13 @@ class MainWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         if self._theme.tokens["translucent"]:
-            enable_system_blur(self, True)
+            enable_system_blur(self, True, self.glass_blur_level)
+
+    def set_glass_blur(self, level):
+        self._settings.glass_blur = level
+        self.glass_blur_level = self._settings.glass_blur
+        if self._theme.tokens["translucent"] and self.isVisible():
+            enable_system_blur(self, True, self.glass_blur_level)
 
     def closeEvent(self, event):
         self.downloads.shutdown()
