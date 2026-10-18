@@ -51,6 +51,8 @@ def window_factory(qtbot, settings, tmp_path, fake_provider, jpeg):
     from app.services.storage_service import StorageManager
     from app.services.thumbnail_service import ThumbnailService
 
+    created = []
+
     def make(configure=True, storage=None):
         storage = storage or StorageManager(settings, tmp_path / "appdata")
         if configure and storage.status() != "ready":
@@ -62,8 +64,20 @@ def window_factory(qtbot, settings, tmp_path, fake_provider, jpeg):
             ProviderChain([fake_provider]), ThumbnailService(lambda url: jpeg),
             player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
         )
+        created.append(w)
         qtbot.addWidget(w)
         w.show()
         return w
 
-    return make
+    yield make
+    # Sem destruir de verdade, as janelas de cada teste se acumulam e cada nova aplicação de tema repinta todas elas.
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    for w in created:
+        try:
+            w.close()
+            w.deleteLater()
+        except RuntimeError:  # já destruída pelo qtbot
+            pass
+    QApplication.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
