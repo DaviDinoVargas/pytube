@@ -2,7 +2,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 
 from app.styles import icons
-from app.styles.styler import WidgetStyler
+from app.styles.styler import shared_styler
 from app.styles.tokens import DEFAULT_THEME, THEMES
 
 
@@ -415,8 +415,7 @@ class ThemeManager(QObject):
         self._app = app
         self._preference = preference
         self._name = resolve_theme(preference)
-        self._styler = WidgetStyler(THEMES[self._name])
-        self._styler.install(app)
+        self._styler = shared_styler(THEMES[self._name], app)
 
     @property
     def name(self):

@@ -82,3 +82,15 @@ class WidgetStyler(QObject):
         if effect is not existing:
             widget.setGraphicsEffect(effect)
             widget.setProperty(_MARK, True)
+
+
+def shared_styler(tokens, app=None):
+    """Um único WidgetStyler por aplicação: vários filtros de eventos em Python (um por janela já criada) multiplicariam o
+    custo de cada evento do aplicativo inteiro. Quem pede depois só atualiza os tokens do que já existe."""
+    app = app or QApplication.instance()
+    styler = getattr(app, "_dino_styler", None)
+    if styler is None:
+        styler = WidgetStyler(tokens)
+        styler.install(app)
+        app._dino_styler = styler
+    return styler
