@@ -485,13 +485,14 @@ class PlayerWidget(QFrame):
         """Para a reprodução e grava a posição. Depois zera a posição em memória: um novo stop() ou open() não pode
         regravar um valor velho por cima de um progresso mais novo."""
         self.save_progress()
+        self._request += 1  # respostas atrasadas (stream, etc.) não podem religar o vídeo depois da parada
         self._pos = self._dur = 0.0
         self._save_timer.stop()
         self._notice_timer.stop()
         self.notice.hide()
         for backend in (self._local, self._online):
             if backend is not None:
-                backend.stop() if backend is self._local else backend.pause()
+                backend.stop()
         self._backend, self._kind = None, ""
         self.controls.reset()
         self.stack.setCurrentWidget(self.blank)

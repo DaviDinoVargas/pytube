@@ -14,6 +14,8 @@ from app.ui.player.base import PlayerBackend
 # Hosts que o iframe do player precisa contatar. Nada fora disso é carregado em subquadros.
 _ALLOWED_HOST_SUFFIXES = ("youtube.com", "youtube-nocookie.com", "ytimg.com", "googlevideo.com", "google.com", "gstatic.com", "googleapis.com", "ggpht.com")
 LOAD_TIMEOUT_MS = 20000
+AUTO_HEIGHT = 1080  # o YouTube escolhe a qualidade pelo tamanho do player: "automático" aqui significa até Full HD
+MIN_ZOOM, MAX_ZOOM = 0.25, 5.0
 
 
 def host_allowed(url):
@@ -51,6 +53,7 @@ class OnlinePlayer(PlayerBackend):
         self._levels = []
         self._height = 0
         self._ready = False
+        self._target_height = AUTO_HEIGHT
 
         self._profile = QWebEngineProfile()  # sem nome = perfil temporário: nenhum cookie fica gravado
         self._page = EmbedPage(self._profile, self)
@@ -69,6 +72,7 @@ class OnlinePlayer(PlayerBackend):
 
         self._view = QWebEngineView(self)
         self._view.setPage(self._page)
+        self._view.installEventFilter(self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._view)
@@ -87,8 +91,35 @@ class OnlinePlayer(PlayerBackend):
         b.error.connect(lambda code, yt: (self._timer.stop(), self.error.emit(code, f"youtube:{yt}")))
 
     # -- carga -----------------------------------------------------------------------
+    # -- qualidade: o YouTube decide pelo tamanho (em px CSS) do player, não só pela banda ------------
+    @staticmethod
+    def css_width_for(height):
+        return max(256, int(round(height * 16 / 9)))
+
+    def zoom_for(self, width):
+        """Zoom da página que faz o player enxergar uma área de `target_height` de altura, mesmo numa janela pequena.
+        Com o zoom a página tem mais pixels CSS que pixels reais; é isso que faz o YouTube oferecer HD."""
+        if width <= 0:
+            return 1.0
+        return max(MIN_ZOOM, min(MAX_ZOOM, width / self.css_width_for(self._target_height)))
+
+    def _apply_zoom(self):
+        zoom = self.zoom_for(self._view.width())
+        if abs(zoom - self._view.zoomFactor()) > 0.005:
+            self._view.setZoomFactor(zoom)
+
+    @property
+    def target_height(self):
+        return self._target_height
+
+    def eventFilter(self, obj, event):
+        if obj is self._view and event.type() == QEvent.Resize:
+            self._apply_zoom()
+        return super().eventFilter(obj, event)
+
     def load(self, video_id, start=0.0):
         self._ready, self._height, self._levels, self._position, self._duration = False, 0, [], 0.0, 0.0
+        self._apply_zoom()
         html = embed.build_html(video_id, int(start), self._api_script, embed.webchannel_source())
         self._page.allow_main_load = True
         self._page.setHtml(html, QUrl(embed.ORIGIN + "/"))
@@ -130,9 +161,12 @@ class OnlinePlayer(PlayerBackend):
         self._js("pause()")
 
     def stop(self):
+        """Para de verdade: troca a página por uma em branco (o iframe do YouTube é destruído e o som cala).
+        Só pausar não basta: se o player ainda carrega, o autoplay dele liga o vídeo depois, sem ninguém assistindo."""
         self._timer.stop()
         self._ready = False
         self._playing = False
+        self._page.allow_main_load = True  # sem isso a navegação para a página em branco seria recusada
         self._page.setHtml("", QUrl("about:blank"))
 
     def seek(self, seconds):
@@ -149,6 +183,8 @@ class OnlinePlayer(PlayerBackend):
         self._js(f"rate({float(rate)})")
 
     def set_quality(self, height):
+        self._target_height = int(height) if height else AUTO_HEIGHT
+        self._apply_zoom()
         self._js(f"quality('{playback.level_from_height(height) if height else 'default'}')")
 
     def can_change_quality(self):

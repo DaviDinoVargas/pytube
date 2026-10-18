@@ -44,6 +44,7 @@ from app.ui.workers import run_async
 _ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _LOADING, _ERROR, _CONTENT, _EMPTY = 0, 1, 2, 3
 DESCRIPTION_LINES = 4
+READING_WIDTH = 920  # largura do texto sob o vídeo no modo cinema
 
 
 def watch_url(source_id):
@@ -101,6 +102,7 @@ class WatchPage(Page):
         self._video = None
         self._request = 0
         self._last_id = None
+        self._player_pending = False
         self._description_open = False
 
         self.title.hide()
@@ -200,19 +202,25 @@ class WatchPage(Page):
         self.stage_layout.addWidget(self.player, 1, Qt.AlignTop)
         self.stage_layout.addStretch(0)
         col.addWidget(self.stage)
+        # título, ações, fila e relacionados ficam num bloco só: o modo cinema o centraliza com largura de leitura
+        self.body_holder = QWidget()
+        hold = QVBoxLayout(self.body_holder)
+        hold.setContentsMargins(0, 0, 0, 0)
+        hold.setSpacing(12)
+        col.addWidget(self.body_holder)
         self.title_label = QLabel()
         self.title_label.setObjectName("watchTitle")
         self.title_label.setWordWrap(True)
         self.meta_label = QLabel()
         self.meta_label.setObjectName("pageSubtitle")
-        col.addWidget(self.title_label)
-        col.addWidget(self.meta_label)
+        hold.addWidget(self.title_label)
+        hold.addWidget(self.meta_label)
         # tudo que fica abaixo do título (ações, download, descrição) mora neste bloco: o layout Compacto o esconde inteiro
         self.info_block = QWidget()
         info = QVBoxLayout(self.info_block)
         info.setContentsMargins(0, 0, 0, 0)
         info.setSpacing(12)
-        col.addWidget(self.info_block)
+        hold.addWidget(self.info_block)
 
         actions_box = QWidget()
         actions = FlowLayout(actions_box, 10, 8)  # quebra de linha quando o painel central fica estreito
@@ -312,10 +320,10 @@ class WatchPage(Page):
         self.queue_panel.clear_requested.connect(self.queue_clear_requested)
         self.queue_panel.next_requested.connect(self.queue_next_requested)
         self.queue_panel.previous_requested.connect(self.queue_previous_requested)
-        col.addWidget(self.queue_panel)
+        hold.addWidget(self.queue_panel)
         self.related = RelatedStrip(translator, tokens)
         self.related.video_opened.connect(self.video_opened)
-        col.addWidget(self.related)
+        hold.addWidget(self.related)
         col.addStretch(1)
         self.stack.addWidget(content)
 
@@ -422,6 +430,9 @@ class WatchPage(Page):
         self.stage_layout.setStretch(1, 100 if cinema else 1)
         self.stage_layout.setStretch(2, 1 if cinema else 0)
         self.stage_layout.setAlignment(self.player, Qt.AlignVCenter if cinema else Qt.AlignTop)
+        content_layout = self.body_holder.parentWidget().layout()
+        self.body_holder.setMaximumWidth(READING_WIDTH if cinema else 16777215)
+        content_layout.setAlignment(self.body_holder, Qt.AlignHCenter if cinema else Qt.AlignLeft)
         self.back_button.setVisible(not cinema)
         self.body.setSpacing(0 if cinema else 16)
         spacer = self.layout().itemAt(2).spacerItem()  # o respiro entre o título (oculto) e o conteúdo
@@ -563,6 +574,8 @@ class WatchPage(Page):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self._player_pending and self._info is not None and self.stack.currentIndex() == _CONTENT:
+            self._sync_player()
         if self.cinema:
             self.idle.start()
 
@@ -570,14 +583,23 @@ class WatchPage(Page):
         super().hideEvent(event)
         self.idle.stop()
         if not event.spontaneous() and not self.player.is_mini:  # no mini player o vídeo continua; minimizar a janela não conta
+            self._request += 1  # respostas de rede que chegarem agora não devem abrir nada
+            if self.stack.currentIndex() in (_LOADING, _ERROR):
+                self.stack.setCurrentIndex(_EMPTY)
             try:
                 self.player.stop()
             except RuntimeError:  # a janela está sendo destruída e os filhos já se foram
                 return
             self._player_source = None
+            self._player_pending = False
 
     def _sync_player(self):
-        """Abre o vídeo no player só quando ele muda; salvar/remover da biblioteca não reinicia a reprodução."""
+        """Abre o vídeo no player só quando ele muda; salvar/remover da biblioteca não reinicia a reprodução.
+        Com a página escondida (o usuário já saiu) nada toca: a abertura fica pendente até ela voltar a aparecer."""
+        if not (self.isVisible() or self.player.is_mini):
+            self._player_pending = True
+            return
+        self._player_pending = False
         source_id = self._info.source_id
         if source_id != self._player_source or self.player.is_idle():
             self._player_source = source_id

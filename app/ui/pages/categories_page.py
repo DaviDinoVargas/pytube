@@ -8,6 +8,8 @@ from app.ui.pages.base import EmptyState, Page
 from app.ui.widgets.flow_layout import FlowLayout
 
 CARD_WIDTH = 260
+CARD_HEIGHT = 142  # todos os cartões iguais, com ou sem descrição ou botão de tocar
+DESCRIPTION_LINES = 2
 
 
 class CollectionCard(QFrame):
@@ -22,7 +24,7 @@ class CollectionCard(QFrame):
         super().__init__()
         self.item_id, self.name = item_id, name
         self.setObjectName("collectionCard")
-        self.setFixedWidth(CARD_WIDTH)
+        self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setAccessibleName(f"{name}. {count_text}")
@@ -41,6 +43,8 @@ class CollectionCard(QFrame):
         self.name_label = QLabel(name)
         self.name_label.setObjectName("cardTitle")
         self.name_label.setWordWrap(True)
+        self.name_label.setMaximumHeight(self.name_label.fontMetrics().lineSpacing() * 2 + 4)
+        self.name_label.setToolTip(name)
         self.menu_button = QToolButton()
         self.menu_button.setObjectName("iconButton")
         self.menu_button.setIcon(icon("more", tokens["text_secondary"]))
@@ -60,11 +64,14 @@ class CollectionCard(QFrame):
         self.description_label = QLabel(description)
         self.description_label.setObjectName("cardMeta")
         self.description_label.setWordWrap(True)
+        self.description_label.setMaximumHeight(self.description_label.fontMetrics().lineSpacing() * DESCRIPTION_LINES + 2)
+        self.description_label.setToolTip(description)
         self.description_label.setVisible(bool(description))
         column.addWidget(self.description_label)
         self.count_label = QLabel(count_text)
         self.count_label.setObjectName("cardMeta")
         column.addWidget(self.count_label)
+        column.addStretch(1)  # o botão de tocar (quando há) fica sempre rente à base
         self.play_button = None
         if play:
             self.play_button = QPushButton(t("playlists.play_all"))

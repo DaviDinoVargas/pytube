@@ -104,6 +104,7 @@ class LocalPlayer(PlayerBackend):
         self._player.pause()
 
     def stop(self):
+        self._autoplay, self._start = False, 0.0  # um 'carregou' que chegue depois não pode tocar nada
         self._player.stop()
         self._player.setSource(QUrl())
 
