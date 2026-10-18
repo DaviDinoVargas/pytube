@@ -139,4 +139,6 @@ class Sidebar(QFrame):
     def _refresh_icons(self):
         for key, btn in self._buttons.items():
             color = self._tokens["text_primary"] if btn.isChecked() else self._tokens["text_secondary"]
+            if btn.isChecked() and self._tokens.get("nav") == "block":
+                color = self._tokens["text_on_accent"]  # item invertido: o ícone acompanha o texto
             btn.setIcon(icon(key, color))

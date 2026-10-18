@@ -18,7 +18,7 @@ def test_every_theme_builds_a_complete_stylesheet(name):
 def test_pixel_art_uses_two_pixel_square_borders_and_thicker_focus():
     sheet = build_stylesheet(THEMES["pixel"])
     assert "QFrame#card { background: rgba" not in sheet
-    assert re.search(r"QFrame#card \{[^}]*border: 2px solid #5B54A0; border-radius: 0px", sheet)
+    assert re.search(r"QFrame#card \{[^}]*border: 3px solid #FFF4D6; border-radius: 0px", sheet)
     assert re.search(r"QLineEdit:focus \{ border: 3px solid", sheet)
 
 

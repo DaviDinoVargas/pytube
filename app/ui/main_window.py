@@ -36,6 +36,7 @@ from app.ui.workers import run_async
 from app.services.storage_service import STATUS_READY
 from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
+from app.styles.backdrop import BackdropWidget
 from app.ui.chrome.compact_bar import CompactBar
 from app.ui.chrome.nav_tree import NavTree
 from app.ui.chrome.status_bar import AppStatusBar
@@ -74,8 +75,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         tokens = theme.tokens
-        root = QWidget()
-        root.setObjectName("root")
+        root = BackdropWidget(tokens)  # desenha o fundo do tema (gradiente + manchas, grade, papel…)
+        self.backdrop = root
         self.setCentralWidget(root)
         shell = QVBoxLayout(root)  # [navegação do topo] / [corpo] / [barra de estado]
         shell.setContentsMargins(0, 0, 0, 0)
@@ -795,6 +796,7 @@ class MainWindow(QMainWindow):
 
     def _apply_tokens(self):
         tokens = self._theme.tokens
+        self.backdrop.set_tokens(tokens)
         self.sidebar.set_tokens(tokens)
         self.compact_bar.set_tokens(tokens)
         self.top_bar.set_tokens(tokens)

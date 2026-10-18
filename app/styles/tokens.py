@@ -366,6 +366,16 @@ THEMES = {
     "earthy": EARTHY,
 }
 
+# Estilo estrutural: fundo, cartões, navegação, botões, densidade, títulos, sombra, brilho e ícones (ver presets.py).
+# Cada tema recebe os padrões abaixo e depois o que o seu preset define.
+from app.styles.presets import PRESETS  # noqa: E402
+
+STYLE_DEFAULTS = {
+    "backdrop": "none", "backdrop_colors": None, "card": "outline", "nav": "pill", "btn": "round", "density": 1.0,
+    "heading": "normal", "shadow": None, "glow": None, "stroke": 1.75,
+}
+THEMES = {name: {**tokens, **STYLE_DEFAULTS, **PRESETS.get(name, {})} for name, tokens in THEMES.items()}
+
 # Preferências aceitas: os temas acima mais 'system' (segue o sistema operacional)
 THEME_CHOICES = ("system",) + tuple(THEMES)
 DEFAULT_THEME = "dark"

@@ -17,6 +17,9 @@ Feito em Python com PySide6 (Qt), para Windows (roda também em Linux e macOS a 
 - **21 temas** (escuro, claro, sistema, oceano, floresta, pôr do sol e mais 16: Minimalista, Cinema, Vidro fosco, Relevo suave,
   Nord, Dracula, Terminal, Pixel Art, Luxo, Pastel, Editorial, Fluent, Cyberpunk, Monocromático, Objetos físicos e Terra),
   todos com contraste de texto verificado por teste (WCAG AA), e **idiomas** (português do Brasil e inglês).
+  Os temas mudam também a **estrutura**, não só a cor: fundo (vidro com manchas de luz, grade, linhas de varredura, papel, aurora…),
+  tipo de cartão (vidro translúcido, borda dura, neon, só um fio, relevo…), navegação (pílula, barra lateral, bloco, sublinhado),
+  forma dos botões, densidade, títulos em maiúsculas, sombras e espessura dos ícones. O **Vidro fosco** é translúcido de verdade.
 - **6 layouts**, combináveis com qualquer tema (*Configurações → Layout*, com prévia):
   - **Biblioteca clássica**: menu lateral, player central, relacionados abaixo e painel de detalhes opcional.
   - **Streaming**: início com vídeo em destaque, fileiras horizontais e recomendações feitas só com a sua biblioteca.

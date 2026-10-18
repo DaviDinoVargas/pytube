@@ -1,6 +1,8 @@
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 
+from app.styles import icons
+from app.styles.styler import WidgetStyler
 from app.styles.tokens import DEFAULT_THEME, THEMES
 
 
@@ -39,8 +41,48 @@ def build_stylesheet(t):
                 f"border-top-color: {light}; border-left-color: {light}; border-bottom-color: {shadow}; border-right-color: {shadow};")
 
     relief = t['relief']
-    raised = edge(*relief) if relief else f"border: {bw}px solid {t['border']};"
-    inset = edge(relief[1], relief[0]) if relief else f"border: {bw}px solid {t['border']};"
+    style, strong = t['card'], t['text_primary']
+    density = t['density']
+
+    def px(value):
+        """Espaçamento escalado pela densidade do tema (compacto 0.9 … arejado 1.2)."""
+        return max(1, round(value * density))
+
+    btn_radius = {"round": r['sm'], "pill": 22, "square": 0}[t['btn']]
+    card_radius = 0 if style == "line" else min(r['md'], 6) if style == "hard" else r['md']
+    panel_bg = "transparent" if style == "line" else t['surface']
+    solid_surface = t['surface_elevated'] if t['surface'].startswith("rgba") else t['surface']
+    if style == "relief" and relief:
+        raised, inset = edge(*relief), edge(relief[1], relief[0])
+    else:
+        raised = {
+            "flat": f"border: {bw}px solid transparent;", "elevated": f"border: {bw}px solid transparent;",
+            "glass": f"border: 1px solid {t['border']};", "hard": f"border: {max(bw, 2) + 1}px solid {strong};",
+            "neon": f"border: 1px solid {t['accent']};", "line": f"border: none; border-bottom: 1px solid {t['border']};",
+        }.get(style, f"border: {bw}px solid {t['border']};")
+        inset = {"hard": f"border: 2px solid {strong};", "neon": f"border: 1px solid {t['accent']};"}.get(
+            style, f"border: {bw}px solid {t['border']};")
+    # borda de 2 px dos cartões de vídeo: a geometria não muda, só a cor (transparente nos estilos sem moldura)
+    if style == "relief" and relief:
+        card_edge_decl = edge(*relief, width=2)
+    else:
+        card_edge_decl = "border: 2px solid " + {
+            "flat": "transparent", "elevated": "transparent", "line": "transparent", "glass": t['border'], "hard": strong,
+            "neon": t['accent'],
+        }.get(style, t['border']) + ";"
+    card_hover = {
+        "hard": f"border-color: {t['accent']};", "neon": f"border-color: {t['accent_hover']};",
+        "flat": f"background: {t['surface_hover']};", "elevated": f"background: {t['surface_hover']};",
+        "line": f"background: {t['surface_hover']};", "glass": f"background: {t['surface_hover']};",
+    }.get(style, f"border-color: {t['text_secondary']};")
+    nav_base, nav_checked = {
+        "pill": ("border: none; border-radius: %dpx;" % r['sm'], f"background: {t['accent_soft']}; color: {t['text_primary']}; font-weight: 600;"),
+        "bar": ("border: none; border-left: 3px solid transparent; border-radius: 0;",
+                f"background: {t['accent_soft']}; border-left: 3px solid {t['accent_fg']}; color: {t['text_primary']}; font-weight: 600;"),
+        "block": ("border: none; border-radius: 0;", f"background: {t['accent']}; color: {t['text_on_accent']}; font-weight: 700;"),
+        "underline": ("border: none; border-bottom: 2px solid transparent; border-radius: 0;",
+                      f"background: transparent; border-bottom: 2px solid {t['accent_fg']}; color: {t['text_primary']}; font-weight: 600;"),
+    }[t['nav']]
     gradient_buttons = t['btn_top'] != t['accent']
     primary_bg = _vertical(t['btn_top'], t['btn_bottom']) if gradient_buttons else t['accent']
     primary_hover = _vertical(_lighten(t['btn_top'], 0.25), _lighten(t['btn_bottom'], 0.25)) if gradient_buttons else t['accent_hover']
@@ -53,7 +95,8 @@ def build_stylesheet(t):
 
     return f"""
 * {{ font-family: {t['font']}; font-size: 13px; color: {t['text_primary']}; }}
-QMainWindow, QWidget#root {{ background: {gradient}; }}
+QMainWindow {{ background: {t['bg_start']}; }}
+QWidget#root {{ background: transparent; }}
 QStackedWidget, QScrollArea#pageScroll, QWidget#pageContent {{ background: transparent; border: none; }}
 QLabel {{ background: transparent; }}
 
@@ -72,12 +115,12 @@ QLabel#statusOk {{ color: {t['success']}; }}
 QLabel#statusError {{ color: {t['error']}; }}
 
 QToolButton#navItem {{
-    background: transparent; border: none; border-radius: {r['sm']}px;
-    padding: 9px 12px; text-align: left; color: {t['text_secondary']}; font-weight: 500;
+    background: transparent; {nav_base}
+    padding: {px(9)}px {px(12)}px; text-align: left; color: {t['text_secondary']}; font-weight: 500;
 }}
 QToolButton#navItem:hover {{ background: {t['surface_hover']}; color: {t['text_primary']}; }}
-QToolButton#navItem:checked {{ background: {t['accent_soft']}; color: {t['text_primary']}; font-weight: 600; }}
-QToolButton#navItem:focus {{ border: 2px solid {t['focus']}; padding: 7px 10px; }}
+QToolButton#navItem:checked {{ {nav_checked} }}
+QToolButton#navItem:focus {{ border: 2px solid {t['focus']}; padding: {px(9) - 2}px {px(12) - 2}px; }}
 
 QToolButton#iconButton {{
     background: transparent; border: none; border-radius: {r['sm']}px; padding: 6px;
@@ -89,11 +132,11 @@ QToolButton#iconButton:focus {{ border: 2px solid {t['focus']}; padding: 4px; }}
 
 QPushButton#primary {{
     background: {primary_bg}; color: {t['text_on_accent']}; {raised if relief else 'border: none;'}
-    border-radius: {r['sm']}px; padding: 9px 18px; font-weight: 600;
+    border-radius: {btn_radius}px; padding: {px(9)}px {px(18)}px; font-weight: 600;
 }}
 QPushButton#primary:hover {{ background: {primary_hover}; }}
 QPushButton#primary:pressed {{ background: {primary_pressed}; {inset if relief else ''} }}
-QPushButton#primary:focus {{ border: 2px solid {t['text_primary']}; padding: 7px 16px; }}
+QPushButton#primary:focus {{ border: 2px solid {t['text_primary']}; padding: {px(9) - 2}px {px(18) - 2}px; }}
 QPushButton#primary:disabled {{ background: {t['surface_elevated']}; color: {t['text_secondary']}; }}
 
 QLineEdit {{
@@ -116,23 +159,23 @@ QComboBox QAbstractItemView {{
     selection-background-color: {t['accent_soft']}; selection-color: {t['text_primary']}; outline: none;
 }}
 
-QFrame#card {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#card {{ background: {panel_bg}; {raised} border-radius: {card_radius}px; }}
 QFrame#separator {{ background: {t['border']}; max-height: 1px; min-height: 1px; border: none; }}
 
-QDialog {{ background: {t['surface']}; }}
+QDialog {{ background: {solid_surface}; }}
 
 QFrame#videoCard {{
-    background: {t['surface']}; {edge(*relief, width=2) if relief else f"border: 2px solid {t['border']};"} border-radius: {r['md']}px;
+    background: {panel_bg}; {card_edge_decl} border-radius: {card_radius}px;
 }}
-QFrame#videoCard:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#videoCard:hover {{ {card_hover} }}
 QFrame#videoCard:focus {{ border: 2px solid {t['text_primary']}; }}
 QFrame#videoCard[state="downloaded"] {{ border: 2px solid {t['downloaded_border']}; background: {t['downloaded_bg']}; }}
 QFrame#videoCard[state="missing"], QFrame#videoCard[state="invalid"] {{ border: 2px solid {t['warning']}; }}
 QFrame#videoCard[state="failed"] {{ border: 2px solid {t['error']}; }}
 QFrame#videoCard QLabel {{ background: transparent; }}
 QFrame#videoCard QWidget {{ background: transparent; }}
-QFrame#videoRow {{ background: {t['surface']}; {edge(*relief, width=2) if relief else f"border: 2px solid {t['border']};"} border-radius: {r['md']}px; }}
-QFrame#videoRow:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#videoRow {{ background: {panel_bg}; {card_edge_decl} border-radius: {card_radius}px; }}
+QFrame#videoRow:hover {{ {card_hover} }}
 QFrame#videoRow:focus {{ border-color: {t['text_primary']}; }}
 QFrame#videoRow[state="downloaded"] {{ border-color: {t['downloaded_border']}; background: {t['downloaded_bg']}; }}
 QFrame#videoRow[state="missing"], QFrame#videoRow[state="invalid"] {{ border-color: {t['warning']}; }}
@@ -177,7 +220,7 @@ QFrame#hero QLabel {{ background: transparent; color: #FFFFFF; }}
 QLabel#heroKicker {{ font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #E0E0E0; }}
 QLabel#heroTitle {{ font-family: {title}; font-size: {size(28)}px; font-weight: 800; }}
 QLabel#heroMeta {{ font-size: 13px; color: #E0E0E0; }}
-QFrame#detailsPanel, QFrame#libraryList {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#detailsPanel, QFrame#libraryList {{ background: {panel_bg}; {raised} border-radius: {card_radius}px; }}
 QFrame#detailsPanel QLabel, QFrame#libraryList QLabel {{ background: transparent; }}
 QPlainTextEdit#notesEdit {{
     background: {t['input_bg']}; {inset} border-radius: {r['sm']}px; padding: {pad(8, 10, bw)};
@@ -199,7 +242,7 @@ QToolButton#cinemaButton {{
 }}
 QToolButton#cinemaButton:hover {{ background: rgba(255, 255, 255, 80); }}
 QToolButton#cinemaButton:focus {{ border: 2px solid #FFFFFF; padding: 4px 10px; }}
-QFrame#filterBar {{ background: {t['surface_elevated']}; {raised} border-radius: {r['md']}px; }}
+QFrame#filterBar {{ background: {t['surface_elevated']}; {raised} border-radius: {card_radius}px; }}
 QFrame#filterBar QLabel, QFrame#filterBar QWidget {{ background: transparent; }}
 QFrame#filterBar QComboBox, QFrame#filterBar QLineEdit {{ background: {t['input_bg']}; }}
 QTableView#libraryTable {{
@@ -248,7 +291,7 @@ QFrame#appStatusBar QLabel {{ background: transparent; color: {t['text_secondary
 QFrame#appStatusBar QLabel#statusOk {{ color: {t['success']}; }}
 QFrame#appStatusBar QLabel#statusError {{ color: {t['error']}; }}
 QFrame#bulkBar[ribbon="true"] {{ background: {t['surface_elevated']}; border: 1px solid {t['border']}; border-radius: {r['sm']}px; }}
-QFrame#workspaceDock, QFrame#notesIndex {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#workspaceDock, QFrame#notesIndex {{ background: {panel_bg}; {raised} border-radius: {card_radius}px; }}
 QFrame#dockTabs {{ background: transparent; border-bottom: 1px solid {t['border']}; }}
 QToolButton#dockTab {{
     background: transparent; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 10px;
@@ -301,8 +344,8 @@ QToolButton#toolbarToggle:hover {{ background: {t['surface_hover']}; }}
 QFrame#bulkBar {{ background: {t['accent_soft']}; border: 1px solid {t['accent']}; border-radius: {r['md']}px; }}
 QFrame#bulkBar QLabel {{ background: transparent; font-weight: 600; }}
 
-QFrame#collectionCard {{ background: {t['surface']}; border: 2px solid {t['border']}; border-radius: {r['md']}px; }}
-QFrame#collectionCard:hover {{ border-color: {t['text_secondary']}; }}
+QFrame#collectionCard {{ background: {panel_bg}; {card_edge_decl} border-radius: {card_radius}px; }}
+QFrame#collectionCard:hover {{ {card_hover} }}
 QFrame#collectionCard:focus {{ border-color: {t['text_primary']}; }}
 QFrame#collectionCard QLabel, QFrame#collectionCard QWidget {{ background: transparent; }}
 
@@ -313,7 +356,7 @@ QProgressBar#cardProgress[watched="true"]::chunk {{ background: {t['success']}; 
 QLabel#sectionTitle {{ font-family: {title}; font-size: {size(17)}px; font-weight: 700; }}
 QLabel#watchTitle {{ font-family: {title}; font-size: {size(21)}px; font-weight: 700; }}
 QLabel#watchTitle[compact="true"] {{ font-size: 15px; }}
-QFrame#queuePanel {{ background: {t['surface']}; {raised} border-radius: {r['md']}px; }}
+QFrame#queuePanel {{ background: {panel_bg}; {raised} border-radius: {card_radius}px; }}
 QFrame#queuePanel QLabel {{ background: transparent; }}
 QListWidget#queueList {{ background: transparent; border: none; outline: none; }}
 QListWidget#queueList::item {{ padding: 7px 8px; border-radius: {r['sm']}px; }}
@@ -327,11 +370,11 @@ QPushButton#linkButton {{ background: transparent; border: none; color: {t['acce
 QPushButton#linkButton:hover {{ color: {t['text_primary']}; }}
 QPushButton#secondary {{
     background: {t['surface_elevated'] if relief else 'transparent'}; color: {t['text_primary']}; {raised}
-    border-radius: {r['sm']}px; padding: {pad(8, 16, bw)}; font-weight: 500;
+    border-radius: {btn_radius}px; padding: {pad(px(8), px(16), bw)}; font-weight: 500;
 }}
 QPushButton#secondary:hover {{ background: {t['surface_hover']}; }}
 QPushButton#secondary:pressed {{ {inset if relief else ''} }}
-QPushButton#secondary:focus {{ border: {fw}px solid {t['focus']}; padding: {pad(8, 16, fw)}; }}
+QPushButton#secondary:focus {{ border: {fw}px solid {t['focus']}; padding: {pad(px(8), px(16), fw)}; }}
 QPushButton#secondary:disabled {{ color: {t['text_secondary']}; }}
 
 QRadioButton, QCheckBox {{ spacing: 10px; font-weight: 600; min-height: 24px; }}
@@ -372,6 +415,8 @@ class ThemeManager(QObject):
         self._app = app
         self._preference = preference
         self._name = resolve_theme(preference)
+        self._styler = WidgetStyler(THEMES[self._name])
+        self._styler.install(app)
 
     @property
     def name(self):
@@ -385,5 +430,7 @@ class ThemeManager(QObject):
         if preference is not None:
             self._preference = preference
         self._name = resolve_theme(self._preference)
+        icons.set_stroke(self.tokens["stroke"])
         self._app.setStyleSheet(build_stylesheet(self.tokens))
+        self._styler.set_tokens(self.tokens)
         self.theme_changed.emit(self._name)

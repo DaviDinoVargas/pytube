@@ -49,7 +49,10 @@ class WidgetStyler(QObject):
         if name in HEADINGS and isinstance(widget, QLabel):
             self._heading(widget)
         elif name in CARDS:
-            self._shadow(widget)
+            self._shadow(widget, shadow_for(self._tokens))
+        elif name == "primary":
+            glow = self._tokens.get("glow")
+            self._shadow(widget, (18, 0, 0, glow) if glow else None)
 
     def _heading(self, label):
         style = self._tokens.get("heading", "normal")
@@ -62,8 +65,7 @@ class WidgetStyler(QObject):
             font.setLetterSpacing(QFont.AbsoluteSpacing, spacing)
             label.setFont(font)
 
-    def _shadow(self, widget):
-        spec = shadow_for(self._tokens)
+    def _shadow(self, widget, spec):
         existing = widget.graphicsEffect()
         if spec is None:
             if existing is not None and widget.property(_MARK):

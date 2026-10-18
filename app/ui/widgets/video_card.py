@@ -32,8 +32,18 @@ def format_added(iso, language):
     return locale.toString(date, QLocale.ShortFormat)
 
 
+def theme_radius(radius, tokens):
+    """Raio dos cantos da miniatura acompanhando o tema: reto nos temas de fio, curto nos de borda dura."""
+    style = tokens.get("card", "outline")
+    if style == "line":
+        return 0
+    base = tokens["radius"]["md"]
+    return round(radius * (min(base, 6) if style == "hard" else base) / 12)
+
+
 def cover_pixmap(path, width, height, radius, tokens):
     """Miniatura recortada para preencher o espaço, com os cantos de cima arredondados."""
+    radius = theme_radius(radius, tokens)
     out = QPixmap(width, height)
     out.fill(Qt.transparent)
     painter = QPainter(out)

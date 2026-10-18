@@ -59,16 +59,21 @@ _PATHS = {
 }
 
 _cache = {}
+_stroke = [1.75]  # espessura do traço: cada tema escolhe a sua (fino no Minimalista, grosso no Pixel Art)
+
+
+def set_stroke(width):
+    _stroke[0] = float(width)
 
 
 def icon(name, color, size=20):
     """Gera um QIcon nítido em telas de alta densidade, com a cor do tema."""
-    key = (name, color, size)
+    key = (name, color, size, _stroke[0])
     if key in _cache:
         return _cache[key]
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="{color}" '
-        f'stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">{_PATHS[name]}</svg>'
+        f'stroke-width="{_stroke[0]}" stroke-linecap="round" stroke-linejoin="round">{_PATHS[name]}</svg>'
     )
     renderer = QSvgRenderer(QByteArray(svg.encode()))
     scale = 2
