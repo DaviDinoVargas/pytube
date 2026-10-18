@@ -51,8 +51,6 @@ def window_factory(qtbot, settings, tmp_path, fake_provider, jpeg):
     from app.services.storage_service import StorageManager
     from app.services.thumbnail_service import ThumbnailService
 
-    created = []
-
     def make(configure=True, storage=None):
         storage = storage or StorageManager(settings, tmp_path / "appdata")
         if configure and storage.status() != "ready":
@@ -64,20 +62,32 @@ def window_factory(qtbot, settings, tmp_path, fake_provider, jpeg):
             ProviderChain([fake_provider]), ThumbnailService(lambda url: jpeg),
             player_options={"local_factory": make_stub_player, "online_factory": make_stub_player},
         )
-        created.append(w)
         qtbot.addWidget(w)
         w.show()
         return w
 
-    yield make
-    # Sem destruir de verdade, as janelas de cada teste se acumulam e cada nova aplicação de tema repinta todas elas.
-    from PySide6.QtCore import QCoreApplication, QEvent
+    return make
 
-    for w in created:
-        try:
-            w.close()
-            w.deleteLater()
-        except RuntimeError:  # já destruída pelo qtbot
-            pass
-    QApplication.processEvents()
+
+@pytest.fixture(autouse=True)
+def _destroy_main_windows(request):
+    """Sem destruir de verdade, as janelas de cada teste se acumulam e cada nova aplicação de tema repinta todas elas
+    (a suíte ficava cada vez mais lenta). Testes sem interface não pagam nada: a fixture só age se o Qt já está em uso."""
+    yield
+    if "qtbot" not in request.fixturenames:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication, QMainWindow
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        if isinstance(widget, QMainWindow):
+            try:
+                widget.close()
+                widget.deleteLater()
+            except RuntimeError:
+                pass
+    app.processEvents()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
