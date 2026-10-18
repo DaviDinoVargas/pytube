@@ -58,14 +58,19 @@ def test_quick_stop_then_load_still_shows_the_new_video(qtbot, player):
 
 
 @needs_web
-def test_quality_menu_is_offered_even_when_youtube_reports_no_levels(qtbot, player):
-    assert list(DEFAULT_HEIGHTS)[:2] == [1080, 720]
-    ready(qtbot, player)
-    player.run_script("window.__mock.getAvailableQualityLevels = function () { return []; }")
+def test_quality_menu_is_offered_even_when_youtube_reports_no_levels(qtbot):
+    no_levels = MOCK_API.replace("return ['hd1080', 'hd720', 'large', 'medium', 'auto'];", "return [];")
+    assert no_levels != MOCK_API
+    p = OnlinePlayer(api_script=no_levels, timeout_ms=15000)
+    qtbot.addWidget(p)
+    p.resize(480, 270)
+    p.show()
     seen = []
-    player.quality_changed.connect(lambda h, hs: seen.append(hs))
+    p.quality_changed.connect(lambda h, hs: seen.append(hs))
+    ready(qtbot, p)
     qtbot.waitUntil(lambda: bool(seen), timeout=10000)
-    assert seen[-1] == list(DEFAULT_HEIGHTS)
+    assert seen[-1] == list(DEFAULT_HEIGHTS) and p.can_change_quality()
+    p.shutdown()
 
 
 @needs_web
