@@ -20,7 +20,11 @@ def _flat(t, key, under):
 
 
 def _unders(t):
-    return {t["bg_start"], t["bg_end"], t["background"]}
+    unders = {t["bg_start"], t["bg_end"], t["background"]}
+    if t["translucent"]:  # janela translúcida: o pior caso é uma área de trabalho clara por trás
+        for desk in ("#FFFFFF", "#F0E68C", "#000000"):
+            unders |= {flatten_hex(t["bg_start"], desk), flatten_hex(t["bg_end"], desk)}
+    return unders
 
 
 def _solid(value):
@@ -40,7 +44,7 @@ def test_system_is_a_choice_and_not_a_theme():
 def test_the_sixteen_new_themes_exist_and_nothing_was_lost():
     assert set(V12_THEMES) <= set(THEMES)
     assert {"dark", "light", "ocean", "forest", "sunset"} <= set(THEMES)
-    assert len(THEMES) == 21 and THEME_CHOICES[0] == "system"
+    assert len(THEMES) == 22 and THEME_CHOICES[0] == "system"
 
 
 def test_every_theme_is_translated_in_both_languages():

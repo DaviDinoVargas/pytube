@@ -95,7 +95,7 @@ def build_stylesheet(t):
 
     return f"""
 * {{ font-family: {t['font']}; font-size: 13px; color: {t['text_primary']}; }}
-QMainWindow {{ background: {t['bg_start']}; }}
+QMainWindow {{ background: {'transparent' if t['translucent'] else t['bg_start']}; }}
 QWidget#root {{ background: transparent; }}
 QStackedWidget, QScrollArea#pageScroll, QWidget#pageContent {{ background: transparent; border: none; }}
 QLabel {{ background: transparent; }}

@@ -16,6 +16,12 @@ _ALLOWED_HOST_SUFFIXES = ("youtube.com", "youtube-nocookie.com", "ytimg.com", "g
 LOAD_TIMEOUT_MS = 20000
 AUTO_HEIGHT = 1080  # o YouTube escolhe a qualidade pelo tamanho do player: "automático" aqui significa até Full HD
 MIN_ZOOM, MAX_ZOOM = 0.25, 5.0
+# O YouTube hoje costuma devolver uma lista vazia de qualidades (e ignora setPlaybackQuality): oferecemos estas e
+# controlamos a qualidade pelo tamanho virtual da página (zoom), que é o que o player realmente respeita.
+DEFAULT_HEIGHTS = (1080, 720, 480, 360, 240, 144)
+RETRY_MS = 8000  # sem resposta do player nesse tempo: recarrega sozinho (até MAX_RETRIES vezes) antes de mostrar erro
+MAX_RETRIES = 2
+QUALITY_CHECK_MS = 3500  # depois de pedir uma qualidade, confere se o YouTube obedeceu; se não, recarrega naquele ponto
 
 
 def host_allowed(url):
@@ -28,13 +34,17 @@ class EmbedPage(QWebEnginePage):
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent)
-        self.allow_main_load = False
+        self.allowed_loads = 0  # quantas cargas nossas (setHtml) ainda não chegaram; um contador evita perder uma delas
+
+    def allow_next_load(self):
+        self.allowed_loads += 1
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         if is_main_frame:
-            allowed = self.allow_main_load
-            self.allow_main_load = False
-            return allowed
+            if self.allowed_loads > 0:
+                self.allowed_loads -= 1
+                return True
+            return False
         return host_allowed(url.toString()) or url.scheme() in ("about", "blob", "data")
 
     def createWindow(self, _window_type):
@@ -50,10 +60,12 @@ class OnlinePlayer(PlayerBackend):
         self._position = 0.0
         self._duration = 0.0
         self._playing = False
-        self._levels = []
+        self._levels = list(DEFAULT_HEIGHTS)
         self._height = 0
         self._ready = False
         self._target_height = AUTO_HEIGHT
+        self._video_id, self._start, self._retries = None, 0.0, 0
+        self._wanted_height = None  # qualidade pedida pelo usuário, ainda a confirmar
 
         self._profile = QWebEngineProfile()  # sem nome = perfil temporário: nenhum cookie fica gravado
         self._page = EmbedPage(self._profile, self)
@@ -79,8 +91,13 @@ class OnlinePlayer(PlayerBackend):
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.setInterval(timeout_ms)
-        self._timer.timeout.connect(lambda: self.error.emit("network", "o player do YouTube não respondeu"))
+        self._timeout_ms = timeout_ms
+        self._timer.setInterval(min(RETRY_MS, timeout_ms))
+        self._timer.timeout.connect(self._on_load_timeout)
+        self._quality_timer = QTimer(self)
+        self._quality_timer.setSingleShot(True)
+        self._quality_timer.setInterval(QUALITY_CHECK_MS)
+        self._quality_timer.timeout.connect(self._check_quality)
 
         b = self._bridge
         b.ready.connect(self._on_ready)
@@ -118,20 +135,44 @@ class OnlinePlayer(PlayerBackend):
         return super().eventFilter(obj, event)
 
     def load(self, video_id, start=0.0):
-        self._ready, self._height, self._levels, self._position, self._duration = False, 0, [], 0.0, 0.0
+        self._video_id, self._start, self._retries = video_id, start, 0
+        self._ready, self._height, self._levels, self._position, self._duration = False, 0, list(DEFAULT_HEIGHTS), 0.0, 0.0
+        self._start_page(video_id, start)
+
+    def _start_page(self, video_id, start):
         self._apply_zoom()
         html = embed.build_html(video_id, int(start), self._api_script, embed.webchannel_source())
-        self._page.allow_main_load = True
+        self._page.allow_next_load()
         self._page.setHtml(html, QUrl(embed.ORIGIN + "/"))
         self._timer.start()
+
+    def _on_load_timeout(self):
+        """O player não respondeu: costuma ser a API do YouTube que não chegou (tela preta). Tenta de novo antes de desistir."""
+        if self._video_id is None or self._ready:
+            return
+        if self._retries < MAX_RETRIES and self._timeout_ms > RETRY_MS:
+            self._retries += 1
+            self._start_page(self._video_id, self._position or self._start)
+            return
+        self.error.emit("network", "o player do YouTube não respondeu")
 
     def _on_ready(self):
         self._ready = True
         self._timer.stop()
         self.loaded.emit()
+        QTimer.singleShot(250, self._nudge)
+
+    def _nudge(self):
+        """Força a repintura: em alguns sistemas a view do Chromium fica preta até a página mudar de tamanho."""
+        if self._view is None or not self._ready:
+            return
+        zoom = self._view.zoomFactor()
+        self._view.setZoomFactor(zoom + 0.001)
+        self._view.setZoomFactor(zoom)
+        self._view.update()
 
     def _on_state(self, state):
-        playing = state == embed.STATE_PLAYING
+        playing = state in (embed.STATE_PLAYING, embed.STATE_BUFFERING)  # carregando trecho = ainda quer tocar
         if playing != self._playing:
             self._playing = playing
             self.state_changed.emit(playing)
@@ -143,8 +184,9 @@ class OnlinePlayer(PlayerBackend):
         self.position_changed.emit(position, duration)
 
     def _on_quality(self, level, levels):
-        if levels:
-            self._levels = playback.available_heights(levels)
+        reported = playback.available_heights(levels)
+        if len(reported) > 1:  # uma lista de 0 ou 1 nível não ajuda o usuário a escolher: mantém a padrão
+            self._levels = reported
         height = playback.height_from_level(level) or 0
         if height:
             self._height = height
@@ -160,13 +202,20 @@ class OnlinePlayer(PlayerBackend):
     def pause(self):
         self._js("pause()")
 
+    def toggle(self):
+        """Decide dentro da página, com o estado de agora: o último que recebemos pode estar até meio segundo atrasado
+        (ou o usuário acabou de clicar no vídeo), e aí o botão fazia o contrário do esperado."""
+        self._js("toggle()")
+
     def stop(self):
         """Para de verdade: troca a página por uma em branco (o iframe do YouTube é destruído e o som cala).
         Só pausar não basta: se o player ainda carrega, o autoplay dele liga o vídeo depois, sem ninguém assistindo."""
         self._timer.stop()
+        self._quality_timer.stop()
         self._ready = False
         self._playing = False
-        self._page.allow_main_load = True  # sem isso a navegação para a página em branco seria recusada
+        self._video_id = None
+        self._page.allow_next_load()  # sem isso a navegação para a página em branco seria recusada
         self._page.setHtml("", QUrl("about:blank"))
 
     def seek(self, seconds):
@@ -183,9 +232,27 @@ class OnlinePlayer(PlayerBackend):
         self._js(f"rate({float(rate)})")
 
     def set_quality(self, height):
+        """O YouTube ignora o pedido direto de qualidade; o que vale é o tamanho do player. Por isso o zoom da página
+        é ajustado para a altura escolhida, o pedido direto também é feito e, se o player não obedecer, recarrega no mesmo ponto."""
         self._target_height = int(height) if height else AUTO_HEIGHT
         self._apply_zoom()
         self._js(f"quality('{playback.level_from_height(height) if height else 'default'}')")
+        self._wanted_height = int(height) if height else None
+        if self._wanted_height:
+            self._quality_timer.start()
+        else:
+            self._quality_timer.stop()
+
+    def _check_quality(self):
+        wanted = self._wanted_height
+        if wanted is None or not self._ready or self._video_id is None:
+            return
+        if self._height == wanted:
+            return
+        # o YouTube não trocou: recarrega no mesmo ponto; o tamanho virtual já está certo e define a qualidade inicial
+        self._wanted_height = None  # uma tentativa só
+        self._ready = False
+        self._start_page(self._video_id, self._position)
 
     def can_change_quality(self):
         return True
@@ -205,6 +272,7 @@ class OnlinePlayer(PlayerBackend):
     def shutdown(self):
         """Encerramento ordenado: a view e a página saem antes do perfil. Sem isso o Chromium pode travar ao sair."""
         self._timer.stop()
+        self._quality_timer.stop()
         self._ready = self._playing = False
         view, page = self._view, self._page
         view.setParent(None)

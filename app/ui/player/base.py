@@ -20,6 +20,10 @@ class PlayerBackend(QWidget):
     def pause(self):
         raise NotImplementedError
 
+    def toggle(self):
+        """Alterna tocar/pausar usando o estado real do motor, não o último que ele nos avisou."""
+        self.pause() if self.is_playing() else self.play()
+
     def stop(self):
         raise NotImplementedError
 

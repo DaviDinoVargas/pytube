@@ -7,10 +7,10 @@ from PySide6.QtWidgets import QWidget
 
 from app.styles.colors import qcolor, with_alpha
 
-NONE, ORBS, AURORA, SUN, VIGNETTE, GRID, DOTS, SCANLINES, PAPER, BLOBS, BRUSHED = (
-    "none", "orbs", "aurora", "sun", "vignette", "grid", "dots", "scanlines", "paper", "blobs", "brushed",
+NONE, ORBS, AURORA, SUN, VIGNETTE, GRID, DOTS, SCANLINES, PAPER, BLOBS, BRUSHED, FROST = (
+    "none", "orbs", "aurora", "sun", "vignette", "grid", "dots", "scanlines", "paper", "blobs", "brushed", "frost",
 )
-KINDS = (NONE, ORBS, AURORA, SUN, VIGNETTE, GRID, DOTS, SCANLINES, PAPER, BLOBS, BRUSHED)
+KINDS = (NONE, ORBS, AURORA, SUN, VIGNETTE, GRID, DOTS, SCANLINES, PAPER, BLOBS, BRUSHED, FROST)
 
 _noise_cache = {}
 
@@ -103,6 +103,19 @@ def paint_backdrop(p, rect, t):
             y += 3
     elif kind == PAPER:
         p.drawTiledPixmap(rect.toRect(), _noise_tile(light))
+    elif kind == FROST:  # vidro líquido: brilho de luz que atravessa o vidro, grão fosco e uma borda de luz no topo
+        sheen = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        sheen.setColorAt(0, QColor(255, 255, 255, 46))
+        sheen.setColorAt(0.35, QColor(255, 255, 255, 6))
+        sheen.setColorAt(0.65, QColor(255, 255, 255, 0))
+        sheen.setColorAt(1, QColor(255, 255, 255, 22))
+        p.fillRect(rect, QBrush(sheen))
+        p.drawTiledPixmap(rect.toRect(), _noise_tile(False))
+        edge = QLinearGradient(rect.topLeft(), rect.topRight())
+        edge.setColorAt(0, QColor(255, 255, 255, 0))
+        edge.setColorAt(0.5, QColor(255, 255, 255, 120))
+        edge.setColorAt(1, QColor(255, 255, 255, 0))
+        p.fillRect(QRectF(rect.left(), rect.top(), rect.width(), 1.5), QBrush(edge))
     elif kind == BRUSHED:  # metal escovado: fios horizontais finos
         rng = QRandomGenerator(777)
         for y in range(int(rect.top()), int(rect.bottom()), 2):

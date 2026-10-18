@@ -82,7 +82,7 @@ function onYouTubeIframeAPIReady() {{
                    fs: 0, modestbranding: 1, iv_load_policy: 3, start: {start}, autoplay: 1 }},
     host: '{EMBED_HOST}',
     events: {{
-      onReady: function () {{ ready = true; send('ready', {{}}); poll(); setInterval(poll, 500); }},
+      onReady: function () {{ ready = true; send('ready', {{}}); poll(); setInterval(poll, 250); }},
       onStateChange: function (e) {{ send('state', {{ state: e.data }}); }},
       onError: function (e) {{ send('error', {{ code: e.data }}); }},
       onPlaybackQualityChange: function (e) {{ send('quality', {{ level: e.data }}); }},
@@ -93,6 +93,11 @@ function onYouTubeIframeAPIReady() {{
 window.dino = {{
   play: function () {{ if (ready) player.playVideo(); }},
   pause: function () {{ if (ready) player.pauseVideo(); }},
+  toggle: function () {{
+    if (!ready) return;
+    var s = player.getPlayerState();
+    if (s == 1 || s == 3) player.pauseVideo(); else player.playVideo();
+  }},
   seek: function (t) {{ if (ready) player.seekTo(t, true); }},
   quality: function (q) {{
     if (!ready) return;

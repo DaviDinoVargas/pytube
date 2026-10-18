@@ -443,7 +443,7 @@ class PlayerWidget(QFrame):
     def toggle_play(self):
         if self._backend is None:
             return
-        self._backend.pause() if self._backend.is_playing() else self._backend.play()
+        self._backend.toggle()
 
     def seek(self, seconds):
         if self._backend is None:

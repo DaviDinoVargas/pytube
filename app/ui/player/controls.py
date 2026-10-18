@@ -133,6 +133,8 @@ class PlayerControls(QFrame):
         self.time_label.setText(f"{format_duration(position) or '0:00'} / {format_duration(duration) or '0:00'}")
 
     def set_status(self, volume, muted, rate):
+        if (volume, muted, rate) == (self._volume, self._muted, self._rate):
+            return  # o player avisa duas vezes por segundo; refazer os menus a cada aviso fecharia o que está aberto
         self._volume, self._muted, self._rate = volume, muted, rate
         self.volume_slider.blockSignals(True)
         self.volume_slider.setValue(int(volume))
@@ -140,7 +142,10 @@ class PlayerControls(QFrame):
         self.refresh()
 
     def set_quality(self, current_height, available, can_change):
-        self._current_height, self._available, self._can_change_quality = current_height, list(available), can_change
+        new = (current_height, list(available), can_change)
+        if new == (self._current_height, self._available, self._can_change_quality):
+            return
+        self._current_height, self._available, self._can_change_quality = new
         self.refresh()
 
     def set_source(self, kind):
@@ -218,6 +223,8 @@ class PlayerControls(QFrame):
         self.speed_button.setText(_speed_label(self._rate))
         self._label(self.speed_button, self._tr.t("player.speed"))
         menu = self.speed_button.menu()
+        if menu.isVisible():
+            return
         menu.clear()
         for rate in playback.SPEEDS:
             action = menu.addAction(_speed_label(rate))
@@ -233,6 +240,8 @@ class PlayerControls(QFrame):
         self._label(self.quality_button, tip)
         self.quality_button.setEnabled(bool(self._current_height or self._available))
         menu = self.quality_button.menu()
+        if menu.isVisible():
+            return  # nunca desmonta o menu enquanto o usuário escolhe
         menu.clear()
         if self._can_change_quality:
             auto = menu.addAction(t("player.auto"))

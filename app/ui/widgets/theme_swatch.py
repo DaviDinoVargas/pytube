@@ -2,6 +2,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QAbstractButton
 
+from app.styles.backdrop import paint_backdrop
 from app.styles.tokens import THEMES
 
 SWATCH_SIZE = (150, 112)
@@ -96,10 +97,13 @@ class ThemeSwatch(QAbstractButton):
 
     @staticmethod
     def _paint_theme(p, rect, t):
-        grad = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        grad.setColorAt(0, _color(t["bg_start"]))
-        grad.setColorAt(1, _color(t["bg_end"]))
-        p.fillRect(rect, grad)
+        if t.get("translucent"):  # janela translúcida: a miniatura mostra um "papel de parede" colorido por trás do vidro
+            wall = QLinearGradient(rect.topLeft(), rect.bottomRight())
+            wall.setColorAt(0, QColor("#2B6CB0"))
+            wall.setColorAt(0.5, QColor("#D69E2E"))
+            wall.setColorAt(1, QColor("#B83280"))
+            p.fillRect(rect, wall)
+        paint_backdrop(p, rect, t)
         side = QRectF(rect.left(), rect.top(), rect.width() * 0.28, rect.height())
         p.fillRect(side, _color(t["surface"]))
         # itens da sidebar

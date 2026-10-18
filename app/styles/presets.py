@@ -1,7 +1,7 @@
 """Estilo estrutural de cada tema (além das cores). Cada tema ganha uma personalidade própria:
 fundo (backdrop), tipo de cartão, navegação, forma dos botões, densidade, títulos, sombra e brilho.
 
-  backdrop   fundo da janela: none, orbs (vidro), aurora, sun, vignette, grid, dots, scanlines, paper, blobs, brushed
+  backdrop   fundo da janela: none, orbs (vidro), aurora, sun, vignette, grid, dots, scanlines, paper, blobs, brushed, frost
   card       outline (borda), flat (sem borda), elevated (sombra), glass (vidro), hard (borda grossa + sombra seca),
              neon (borda e brilho de cor), line (só um fio), relief (luz e sombra)
   nav        pill (destaque arredondado), bar (barra de cor à esquerda), block (item invertido), underline (sublinhado)
@@ -11,6 +11,7 @@ fundo (backdrop), tipo de cartão, navegação, forma dos botões, densidade, t�
   shadow     (desfoque, dx, dy, cor) dos cartões, ou None
   glow       cor do brilho do botão principal, ou None
   stroke     espessura dos ícones
+  translucent  a janela inteira é translúcida (deixa ver a área de trabalho por trás)
 """
 
 PRESETS = {
@@ -33,6 +34,10 @@ PRESETS = {
     "glass": dict(
         backdrop="orbs", backdrop_colors=("#7C4DFF", "#00B0FF", "#FF4081", "#3F51B5"), card="glass", nav="pill", btn="pill",
         density=1.05, heading="normal", shadow=(24, 0, 8, "rgba(0, 0, 0, 90)"), stroke=1.6,
+    ),
+    "frost": dict(
+        backdrop="frost", card="glass", nav="pill", btn="pill", density=1.05, heading="normal",
+        shadow=(28, 0, 10, "rgba(0, 0, 0, 80)"), stroke=1.6, translucent=True,
     ),
     "neumorphism": dict(
         backdrop="none", card="relief", nav="pill", btn="pill", density=1.15, heading="normal",

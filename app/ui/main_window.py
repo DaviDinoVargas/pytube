@@ -37,6 +37,7 @@ from app.services.storage_service import STATUS_READY
 from app.ui.dialogs.storage_dialog import StorageDialog
 from app.ui.pages.settings_page import SettingsPage
 from app.styles.backdrop import BackdropWidget
+from app.styles.translucency import enable_system_blur, set_window_translucent
 from app.ui.chrome.compact_bar import CompactBar
 from app.ui.chrome.nav_tree import NavTree
 from app.ui.chrome.status_bar import AppStatusBar
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         tokens = theme.tokens
+        set_window_translucent(self, tokens["translucent"])  # antes de aparecer: a janela nativa já nasce translúcida
         root = BackdropWidget(tokens)  # desenha o fundo do tema (gradiente + manchas, grade, papel…)
         self.backdrop = root
         self.setCentralWidget(root)
@@ -696,6 +698,11 @@ class MainWindow(QMainWindow):
         self.sidebar.set_badge("downloads", self.downloads.active_count())
         self._on_library_changed()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._theme.tokens["translucent"]:
+            enable_system_blur(self, True)
+
     def closeEvent(self, event):
         self.downloads.shutdown()
         self.watch_page.player.shutdown()  # grava a posição e encerra o Chromium na ordem certa
@@ -796,6 +803,7 @@ class MainWindow(QMainWindow):
 
     def _apply_tokens(self):
         tokens = self._theme.tokens
+        set_window_translucent(self, tokens["translucent"])
         self.backdrop.set_tokens(tokens)
         self.sidebar.set_tokens(tokens)
         self.compact_bar.set_tokens(tokens)
