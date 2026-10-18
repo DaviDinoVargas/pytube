@@ -103,13 +103,14 @@ def paint_backdrop(p, rect, t):
             y += 3
     elif kind == PAPER:
         p.drawTiledPixmap(rect.toRect(), _noise_tile(light))
-    elif kind == FROST:  # vidro líquido: brilho de luz que atravessa o vidro e uma borda de luz no topo (sem grão: o fosco é só o do sistema)
+    elif kind == FROST:  # vidro líquido: brilho de luz que atravessa o vidro e uma borda de luz no topo  e grão fosco
         sheen = QLinearGradient(rect.topLeft(), rect.bottomRight())
         sheen.setColorAt(0, QColor(255, 255, 255, 46))
         sheen.setColorAt(0.35, QColor(255, 255, 255, 6))
         sheen.setColorAt(0.65, QColor(255, 255, 255, 0))
         sheen.setColorAt(1, QColor(255, 255, 255, 22))
         p.fillRect(rect, QBrush(sheen))
+        p.drawTiledPixmap(rect.toRect(), _noise_tile(False))
         edge = QLinearGradient(rect.topLeft(), rect.topRight())
         edge.setColorAt(0, QColor(255, 255, 255, 0))
         edge.setColorAt(0.5, QColor(255, 255, 255, 120))
@@ -138,5 +139,9 @@ class BackdropWidget(QWidget):
 
     def paintEvent(self, _event):
         p = QPainter(self)
+        if self._tokens.get("translucent"):  # janela translúcida: apaga o quadro anterior em vez de pintar por cima dele
+            p.setCompositionMode(QPainter.CompositionMode_Source)
+            p.fillRect(self.rect(), Qt.transparent)
+            p.setCompositionMode(QPainter.CompositionMode_SourceOver)
         paint_backdrop(p, self.rect(), self._tokens)
         p.end()

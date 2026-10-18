@@ -20,7 +20,7 @@ Feito em Python com PySide6 (Qt), para Windows (roda também em Linux e macOS a 
   Os temas mudam também a **estrutura**, não só a cor: fundo (vidro com manchas de luz, grade, linhas de varredura, papel, aurora…),
   tipo de cartão (vidro translúcido, borda dura, neon, só um fio, relevo…), navegação (pílula, barra lateral, bloco, sublinhado),
   forma dos botões, densidade, títulos em maiúsculas, sombras e espessura dos ícones. O **Vidro fosco** é translúcido sobre manchas de luz; o **Vidro cinza** deixa ver o que está aberto atrás do aplicativo
-  (janela translúcida; no Windows 10/11 o sistema desfoca o fundo, com a intensidade escolhida em *Configurações → Tema*: nenhum, leve ou forte; em outros sistemas ela fica apenas transparente).
+  (janela translúcida; no Windows 10/11 o sistema desfoca o fundo, podendo ser trocado em *Configurações → Tema* entre fosco (desfocado) e transparente (sem desfoque); em outros sistemas ela fica apenas transparente).
 - **6 layouts**, combináveis com qualquer tema (*Configurações → Layout*, com prévia):
   - **Biblioteca clássica**: menu lateral, player central, relacionados abaixo e painel de detalhes opcional.
   - **Streaming**: início com vídeo em destaque, fileiras horizontais e recomendações feitas só com a sua biblioteca.

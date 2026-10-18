@@ -175,27 +175,28 @@ def test_gray_glass_window_is_translucent_but_panels_stay_readable():
     assert int(t["surface"].strip("rgba()").split(",")[-1]) > 100  # mas os painéis escurecem o suficiente para ler
 
 
-def test_glass_blur_setting_defaults_to_light_and_is_chosen_in_settings(window_factory, settings):
-    assert settings.glass_blur == "light"
+def test_glass_blur_setting_defaults_to_frosted_and_can_be_made_transparent(window_factory, settings):
+    assert settings.glass_blur == "strong"
     w = window_factory()
     combo = w.settings_page.glass_combo
-    assert [combo.itemData(i) for i in range(combo.count())] == ["none", "light", "strong"]
-    assert combo.currentData() == "light" and combo.itemText(0).startswith("Nenhum")
+    assert [combo.itemData(i) for i in range(combo.count())] == ["strong", "none"]
+    assert combo.currentData() == "strong" and combo.itemText(0).startswith("Fosco")
     combo.setCurrentIndex(combo.findData("none"))
     assert settings.glass_blur == "none" and w.glass_blur_level == "none"
-    settings.glass_blur = "invalido"
-    assert settings.glass_blur == "light"
+    settings.glass_blur = "light"  # valor de versões anteriores
+    assert settings.glass_blur == "strong"
 
 
-def test_gray_glass_has_no_grain_so_it_is_not_overly_frosted():
-    from PySide6.QtGui import QImage, QPainter
+def test_translucent_backdrop_clears_the_previous_frame(qtbot):
+    """O fundo mostrava a tela anterior do app: o quadro novo era pintado por cima do antigo."""
+    from PySide6.QtGui import QImage
 
-    from app.styles.backdrop import paint_backdrop
+    from app.styles.backdrop import BackdropWidget
 
-    image = QImage(120, 90, QImage.Format_ARGB32)
-    image.fill(Qt.transparent)
-    p = QPainter(image)
-    paint_backdrop(p, image.rect(), THEMES["frost"])
-    p.end()
-    inner = {image.pixelColor(x, 40).rgba() for x in range(30, 90, 3)}
-    assert len(inner) <= 25  # gradiente suave, sem ruído por pixel
+    widget = BackdropWidget(THEMES["frost"])
+    qtbot.addWidget(widget)
+    widget.resize(80, 60)
+    image = QImage(80, 60, QImage.Format_ARGB32_Premultiplied)
+    image.fill(Qt.red)  # "quadro anterior" opaco
+    widget.render(image)
+    assert image.pixelColor(40, 30).alpha() < 255 and image.pixelColor(40, 30).red() < 200

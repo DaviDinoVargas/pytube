@@ -46,9 +46,9 @@ class SettingsService:
 
     @property
     def glass_blur(self):
-        """Desfoque do que está atrás do Vidro cinza: 'none' (só transparente), 'light' ou 'strong' (acrílico)."""
-        value = self._s.value("general/glass_blur", "light")
-        return value if value in ("none", "light", "strong") else "light"
+        """Fundo do Vidro cinza: 'strong' (acrílico, fosco) ou 'none' (só transparente, sem desfoque)."""
+        value = self._s.value("general/glass_blur", "strong")
+        return value if value in ("none", "strong") else "strong"
 
     @glass_blur.setter
     def glass_blur(self, value):

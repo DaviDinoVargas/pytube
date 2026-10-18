@@ -92,7 +92,7 @@ class SettingsPage(Page):
         self.glass_label = QLabel()
         self.glass_label.setObjectName("fieldLabel")
         self.glass_combo = QComboBox()
-        for level in ("none", "light", "strong"):
+        for level in ("strong", "none"):
             self.glass_combo.addItem("", level)
         if settings is not None:
             self.glass_combo.setCurrentIndex(self.glass_combo.findData(settings.glass_blur))
@@ -241,7 +241,7 @@ class SettingsPage(Page):
         self.theme_hint.setText(t("settings.theme_hint"))
         self.glass_label.setText(t("settings.glass_blur"))
         self.glass_combo.setAccessibleName(t("settings.glass_blur"))
-        for i, level in enumerate(("none", "light", "strong")):
+        for i, level in enumerate(("strong", "none")):
             self.glass_combo.setItemText(i, t(f"settings.glass_blur_{level}"))
         for name, swatch in self.theme_buttons.items():
             swatch.set_label(t(f"theme.{name}"))
