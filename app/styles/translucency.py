@@ -10,7 +10,7 @@ import sys
 
 from PySide6.QtCore import Qt
 
-ACCENT_DISABLED, ACCENT_BLURBEHIND, ACCENT_ACRYLIC = 0, 3, 4
+ACCENT_DISABLED, ACCENT_TRANSPARENT, ACCENT_ACRYLIC = 0, 2, 4
 WCA_ACCENT_POLICY = 19
 
 
@@ -48,39 +48,59 @@ def _accent(hwnd, state, tint):
     return bool(set_attribute(c_void_p(hwnd), byref(data)))
 
 
-def _dwm_backdrop(hwnd, on):
-    """Windows 11 22H2+: material acrílico do sistema no lugar do fundo da janela."""
+def _extend_frame(hwnd):
+    """Estende o vidro do DWM por toda a janela: é isso que faz o Windows respeitar o alfa do que o Qt desenha na área
+    útil. Sem isso (ou se for zerado depois) a janela sai opaca, mesmo com WA_TranslucentBackground."""
     import ctypes
     from ctypes import byref, c_int
 
     class Margins(ctypes.Structure):
         _fields_ = [("l", c_int), ("r", c_int), ("t", c_int), ("b", c_int)]
 
+    return ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, byref(Margins(-1, -1, -1, -1))) == 0
+
+
+def _dwm_backdrop(hwnd, kind):
+    """Windows 11 22H2+: material do sistema atrás da janela (1 = nenhum, 2 = Mica, 3 = acrílico)."""
+    import ctypes
+    from ctypes import byref, c_int
+
     dwm = ctypes.windll.dwmapi
-    dwm.DwmExtendFrameIntoClientArea(hwnd, byref(Margins(-1, -1, -1, -1) if on else Margins(0, 0, 0, 0)))
-    dwm.DwmSetWindowAttribute(hwnd, 20, byref(c_int(1 if on else 0)), 4)  # DWMWA_USE_IMMERSIVE_DARK_MODE
-    return dwm.DwmSetWindowAttribute(hwnd, 38, byref(c_int(3 if on else 1)), 4) == 0  # DWMWA_SYSTEMBACKDROP_TYPE
+    dwm.DwmSetWindowAttribute(hwnd, 20, byref(c_int(1)), 4)  # DWMWA_USE_IMMERSIVE_DARK_MODE
+    return dwm.DwmSetWindowAttribute(hwnd, 38, byref(c_int(kind)), 4) == 0  # DWMWA_SYSTEMBACKDROP_TYPE
+
+
+def _blur_behind(hwnd, on):
+    """Desfoque leve e clássico do DWM (DwmEnableBlurBehindWindow) na janela inteira."""
+    import ctypes
+    from ctypes import Structure, byref, c_int, c_void_p, c_uint
+
+    class BlurBehind(Structure):
+        _fields_ = [("flags", c_uint), ("enable", c_int), ("region", c_void_p), ("transition", c_int)]
+
+    return ctypes.windll.dwmapi.DwmEnableBlurBehindWindow(c_void_p(hwnd), byref(BlurBehind(1, 1 if on else 0, None, 0))) == 0
 
 
 def enable_system_blur(window, on, level="light"):
-    """Desfoque do que está atrás da janela. `level`: 'none' (só transparente), 'light' (desfoque simples) ou 'strong'
-    (acrílico, mais fosco). Sem efeito, e sem erro, fora do Windows. Devolve True se o sistema aceitou."""
+    """Transparência e desfoque do que está atrás da janela. `level`: 'none' (transparente, sem desfoque), 'light'
+    (desfoque leve do DWM) ou 'strong' (acrílico, o mais fosco). Fora do Windows não faz nada. Devolve True se o sistema aceitou."""
     if not sys.platform.startswith("win"):
         return False
     try:
         hwnd = int(window.winId())
-        if not on or level == "none":
-            _accent(hwnd, ACCENT_DISABLED, 0)
-            _dwm_backdrop(hwnd, False)
-            return True
+        _accent(hwnd, ACCENT_DISABLED, 0)  # parte sempre de uma janela sem efeito, para os níveis não se somarem
+        _dwm_backdrop(hwnd, 1)
+        _blur_behind(hwnd, False)
+        extended = _extend_frame(hwnd)  # com ou sem desfoque, o alfa da janela só vale com o vidro estendido
+        if not on:
+            return extended
+        if level == "none":  # transparente, sem desfoque: o mesmo mecanismo do acrílico, só sem o efeito
+            return _accent(hwnd, ACCENT_TRANSPARENT, 0x00000000) or extended
         if level == "strong":
             # tom quase transparente (ABGR): quem escurece o vidro é o desenho do próprio tema
             if _accent(hwnd, ACCENT_ACRYLIC, 0x14181410):
                 return True
-            return _dwm_backdrop(hwnd, True)
-        # leve: desfoque simples, sem o grão nem o tom do acrílico
-        if _accent(hwnd, ACCENT_BLURBEHIND, 0):
-            return True
-        return _accent(hwnd, ACCENT_ACRYLIC, 0x00000000)
-    except Exception:  # noqa: BLE001  versão do Windows sem suporte: segue só com a transparência
+            return _dwm_backdrop(hwnd, 3)
+        return _blur_behind(hwnd, True) or extended
+    except Exception:  # noqa: BLE001  versão do Windows sem suporte: segue só com a transparência do Qt
         return False
