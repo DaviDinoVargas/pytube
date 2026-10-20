@@ -17,6 +17,9 @@ set "PY="
 where py >nul 2>&1 && set "PY=py -3"
 if not defined PY where python >nul 2>&1 && set "PY=python"
 if not defined PY goto :nopython
+rem o "python" da Microsoft Store e so um atalho que nao roda nada: confere se funciona de verdade
+%PY% -c "import sys" >nul 2>&1 || goto :nopython
+:havepython
 %PY% --version
 %PY% -c "import sys; sys.exit(0 if sys.version_info[:2] >= (3, 10) else 1)" || goto :oldpython
 
@@ -50,8 +53,22 @@ exit /b 0
 
 :nopython
 echo.
-echo ERRO: o Python nao foi encontrado. Instale o Python 3.10 ou mais novo em python.org
-echo       e marque "Add python.exe to PATH" na instalacao. Depois rode este arquivo de novo.
+echo O Python nao foi encontrado neste computador.
+where winget >nul 2>&1 || goto :manualpython
+choice /c SN /m "Posso instalar o Python 3.12 agora pelo winget (oficial e gratis)? S=sim, N=nao"
+if errorlevel 2 goto :manualpython
+echo Instalando o Python 3.12 (pode abrir uma confirmacao do Windows)...
+winget install -e --id Python.Python.3.12 --scope user --silent --accept-package-agreements --accept-source-agreements >> "%LOG%" 2>&1
+set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+if not exist "%PYEXE%" goto :manualpython
+set PY="%PYEXE%"
+echo Python instalado. Continuando o build...
+goto :havepython
+
+:manualpython
+echo.
+echo ERRO: instale o Python 3.10 ou mais novo em python.org (marque "Add python.exe to PATH")
+echo       e rode este arquivo de novo.
 goto :end
 
 :oldpython
