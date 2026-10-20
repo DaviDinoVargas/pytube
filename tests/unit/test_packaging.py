@@ -36,3 +36,11 @@ def test_app_icon_renders_at_every_size(qapp):
         image = app_icon.render(size)
         assert image.width() == size and image.pixelColor(size // 2, size // 2).alpha() == 255
         assert image.pixelColor(0, 0).alpha() == 0  # cantos arredondados transparentes
+
+
+def test_build_script_is_robust_for_double_click():
+    raw = (ROOT / "packaging" / "build_windows.bat").read_bytes()
+    assert raw.count(b"\r\n") == raw.count(b"\n")  # cmd.exe exige CRLF
+    text = raw.decode("ascii")  # sem acentos: o cmd lê o arquivo na página de código do sistema
+    assert ".venv-build" in text and "pause" in text and "build.log" in text
+    assert "DinoTube.spec" in text and "dist\\DinoTube\\DinoTube.exe" in text
