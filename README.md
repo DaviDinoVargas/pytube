@@ -67,13 +67,17 @@ Em *Configurações → Downloads* dá para apontar outro ffmpeg.
 | `Ctrl+L` | colar um link |
 | `Ctrl+,` | configurações |
 
-## Gerar o executável (Windows)
+## Instalar o DinoTube no Windows (instalador gráfico)
 
-```bat
-packaging\build_windows.bat
-```
+Dê duplo clique em **`packaging\Instalar_DinoTube.bat`**. Abre uma janela própria (sem tela de comandos) em que você:
 
-O resultado fica em `dist\DinoTube\DinoTube.exe` (pasta única; copie a pasta inteira).
+1. escolhe a **pasta de instalação** (padrão: `%LOCALAPPDATA%\Programs\DinoTube`) e se quer atalhos na Área de Trabalho e no Menu Iniciar;
+2. acompanha cada etapa e a barra de progresso (preparar o ambiente, baixar as dependências, empacotar, copiar, criar atalhos), com os detalhes opcionais;
+3. ao terminar, abre o DinoTube ou a pasta onde ele ficou.
+
+Se o Python não estiver instalado, o instalador oferece instalá-lo (pelo winget). O programa entra em *Configurações do Windows → Aplicativos* e a pasta de instalação traz um `Desinstalar.bat` (remove o programa e os atalhos; seus vídeos e a biblioteca não são apagados). O registro completo fica em `packaging\build.log`.
+
+Alternativa por linha de comando, que só gera o executável (sem instalar): `packaging\build_windows.bat`. O resultado fica em `dist\DinoTube\DinoTube.exe` (pasta única; copie a pasta inteira).
 
 ## Desenvolvimento
 
