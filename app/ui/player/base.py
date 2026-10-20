@@ -24,6 +24,9 @@ class PlayerBackend(QWidget):
         """Alterna tocar/pausar usando o estado real do motor, não o último que ele nos avisou."""
         self.pause() if self.is_playing() else self.play()
 
+    def refresh_surface(self):
+        """Pede ao motor que repinte a imagem do vídeo (a janela do sistema pode ter sido recriada). Padrão: nada."""
+
     def stop(self):
         raise NotImplementedError
 

@@ -96,7 +96,8 @@ class SettingsPage(Page):
             self.glass_combo.addItem("", level)
         if settings is not None:
             self.glass_combo.setCurrentIndex(self.glass_combo.findData(settings.glass_blur))
-        self.glass_combo.currentIndexChanged.connect(lambda _i: self.glass_blur_selected.emit(self.glass_combo.currentData()))
+        # 'activated' também dispara ao escolher de novo a opção atual: serve para reaplicar o efeito se o sistema o perdeu
+        self.glass_combo.activated.connect(lambda _i: self.glass_blur_selected.emit(self.glass_combo.currentData()))
         glass_row = QHBoxLayout()
         glass_row.addWidget(self.glass_label)
         glass_row.addWidget(self.glass_combo)

@@ -162,9 +162,18 @@ class OnlinePlayer(PlayerBackend):
         self.loaded.emit()
         QTimer.singleShot(250, self._nudge)
 
+    def refresh_surface(self):
+        """A janela do sistema foi recriada (ex.: Vidro cinza): o Chromium precisa reanexar a superfície da imagem,
+        senão o vídeo some e só o áudio continua. Esconder e mostrar a view faz isso sem recarregar o vídeo."""
+        if self._view is None or not self._view.isVisible():
+            return
+        self._view.hide()
+        self._view.show()
+        QTimer.singleShot(150, self._nudge)
+
     def _nudge(self):
         """Força a repintura: em alguns sistemas a view do Chromium fica preta até a página mudar de tamanho."""
-        if self._view is None or not self._ready:
+        if self._view is None:
             return
         zoom = self._view.zoomFactor()
         self._view.setZoomFactor(zoom + 0.001)

@@ -10,6 +10,10 @@ import sys
 
 from PySide6.QtCore import Qt
 
+from app.logging_setup import get_logger
+
+log = get_logger('glass')
+
 ACCENT_DISABLED, ACCENT_TRANSPARENT, ACCENT_ACRYLIC = 0, 2, 4
 WCA_ACCENT_POLICY = 19
 
@@ -73,12 +77,16 @@ def enable_system_blur(window, on, level="strong"):
     try:
         hwnd = int(window.winId())
         if not on:
-            return _accent(hwnd, ACCENT_DISABLED, 0)
-        if level == "none":
-            return _accent(hwnd, ACCENT_TRANSPARENT, 0x00000000)
+            ok = _accent(hwnd, ACCENT_DISABLED, 0)
+        elif level == "none":
+            ok = _accent(hwnd, ACCENT_TRANSPARENT, 0x00000000)
         # tom quase transparente (ABGR): quem escurece o vidro é o desenho do próprio tema
-        if _accent(hwnd, ACCENT_ACRYLIC, 0x14181410):
-            return True
-        return _dwm_backdrop(hwnd, 3)
-    except Exception:  # noqa: BLE001  versão do Windows sem suporte: segue só com a transparência do Qt
+        elif _accent(hwnd, ACCENT_ACRYLIC, 0x14181410):
+            ok = True
+        else:
+            ok = _dwm_backdrop(hwnd, 3)
+        log.info("vidro: hwnd=%s ligado=%s nivel=%s aceito=%s", hwnd, on, level, ok)
+        return ok
+    except Exception as exc:  # noqa: BLE001  versão do Windows sem suporte: segue só com a transparência do Qt
+        log.warning("vidro: o sistema recusou o efeito (%s)", exc)
         return False

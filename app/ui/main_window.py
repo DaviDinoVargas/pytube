@@ -1,4 +1,4 @@
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QFileDialog, QFrame, QMessageBox, QHBoxLayout, QMainWindow, QStackedWidget, QToolButton, QVBoxLayout, QWidget
 
@@ -77,6 +77,9 @@ class MainWindow(QMainWindow):
 
         tokens = theme.tokens
         self.glass_blur_level = settings.glass_blur
+        self._glass_timer = QTimer(self)
+        self._glass_timer.setSingleShot(True)
+        self._glass_timer.timeout.connect(self._reapply_glass)
         set_window_translucent(self, tokens["translucent"])  # antes de aparecer: a janela nativa já nasce translúcida
         root = BackdropWidget(tokens)  # desenha o fundo do tema (gradiente + manchas, grade, papel…)
         self.backdrop = root
@@ -143,6 +146,7 @@ class MainWindow(QMainWindow):
         self.watch_page.playback_ended.connect(self._on_playback_ended)
         self.watch_page.video_opened.connect(self.open_saved_video)
         self.watch_page.video_shown.connect(self.compact_bar.set_title)
+        self.watch_page.video_shown.connect(lambda *_: self.schedule_glass(600))  # o player online recria a janela do sistema
         self.queue.changed.connect(self._sync_queue_current)
         self.queue.changed.connect(self.watch_page.refresh_queue)
         self.watch_page.queue_add_requested.connect(lambda video_id: self._queue_add([video_id]))
@@ -260,6 +264,7 @@ class MainWindow(QMainWindow):
         if key not in ("settings", "watch", "playlist"):
             self._previous_page = key
         self.stack.setCurrentWidget(self.pages[key])
+        self.schedule_glass()
         self.top_nav.select(key)
         self._update_compact_title()
         self.layouts.on_page_changed(key)
@@ -702,14 +707,35 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if self._theme.tokens["translucent"]:
-            enable_system_blur(self, True, self.glass_blur_level)
+        self.schedule_glass()
+
+    def event(self, event):
+        # O Qt recria a janela nativa (por exemplo quando o player online aparece pela primeira vez): o efeito do sistema
+        # fica na janela antiga, e a nova nasce cinza e opaca. Reaplicamos sempre que isso acontece.
+        if event.type() in (QEvent.WinIdChange, QEvent.WindowActivate):
+            self.schedule_glass()
+        return super().event(event)
+
+    def schedule_glass(self, delay=120):
+        """Reaplica o vidro (com atraso e sem repetir): chamado ao mostrar, ao trocar de página e ao recriar a janela."""
+        timer = getattr(self, "_glass_timer", None)
+        if timer is not None and self._theme.tokens["translucent"]:
+            timer.start(delay)
+
+    def _reapply_glass(self):
+        tokens = self._theme.tokens
+        if not tokens["translucent"] or not self.isVisible():
+            return
+        if not self.testAttribute(Qt.WA_TranslucentBackground):
+            set_window_translucent(self, True)
+        enable_system_blur(self, True, self.glass_blur_level)
+        self.backdrop.update()
+        self.watch_page.player.refresh_surface()  # o vídeo online precisa reanexar a imagem à janela recriada
 
     def set_glass_blur(self, level):
         self._settings.glass_blur = level
         self.glass_blur_level = self._settings.glass_blur
-        if self._theme.tokens["translucent"] and self.isVisible():
-            enable_system_blur(self, True, self.glass_blur_level)
+        self.schedule_glass(0)
 
     def closeEvent(self, event):
         self.downloads.shutdown()
@@ -809,9 +835,20 @@ class MainWindow(QMainWindow):
         self._theme.apply(name)
 
 
+    def _warn_glass_restart(self, tokens):
+        """No Windows o vídeo online só aparece certo no Vidro cinza se o app já abriu com ele (renderização por RHI)."""
+        import os
+        import sys
+
+        if tokens["translucent"] and sys.platform == "win32" and os.environ.get("QT_WIDGETS_RHI") != "1" \
+                and not os.environ.get("DINOTUBE_NO_RHI") and self.isVisible():
+            self.notify(self._tr.t("glass.restart"))
+
     def _apply_tokens(self):
         tokens = self._theme.tokens
         set_window_translucent(self, tokens["translucent"])
+        self.schedule_glass()
+        self._warn_glass_restart(tokens)
         self.backdrop.set_tokens(tokens)
         self.sidebar.set_tokens(tokens)
         self.compact_bar.set_tokens(tokens)

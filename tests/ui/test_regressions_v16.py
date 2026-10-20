@@ -182,6 +182,7 @@ def test_glass_blur_setting_defaults_to_frosted_and_can_be_made_transparent(wind
     assert [combo.itemData(i) for i in range(combo.count())] == ["strong", "none"]
     assert combo.currentData() == "strong" and combo.itemText(0).startswith("Fosco")
     combo.setCurrentIndex(combo.findData("none"))
+    combo.activated.emit(combo.currentIndex())  # o clique do usuário
     assert settings.glass_blur == "none" and w.glass_blur_level == "none"
     settings.glass_blur = "light"  # valor de versões anteriores
     assert settings.glass_blur == "strong"
@@ -200,3 +201,87 @@ def test_translucent_backdrop_clears_the_previous_frame(qtbot):
     image.fill(Qt.red)  # "quadro anterior" opaco
     widget.render(image)
     assert image.pixelColor(40, 30).alpha() < 255 and image.pixelColor(40, 30).red() < 200
+
+
+def test_glass_is_reapplied_when_the_native_window_is_recreated_or_pages_change(window_factory, settings, monkeypatch):
+    calls = []
+    import app.ui.main_window as mw
+
+    monkeypatch.setattr(mw, "enable_system_blur", lambda window, on, level="strong": calls.append((on, level)))
+    settings.theme = "frost"
+    w = window_factory()
+    w._glass_timer.setInterval(1)
+    calls.clear()
+
+    def settle():
+        w._glass_timer.stop()
+        w._reapply_glass()
+
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QShowEvent
+
+    w.event(QEvent(QEvent.WinIdChange))
+    assert w._glass_timer.isActive()  # recriou a janela nativa: reaplica
+    settle()
+    w.show_page("playlists")
+    assert w._glass_timer.isActive()
+    settle()
+    w.watch_page.video_shown.emit("Título")
+    assert w._glass_timer.isActive()
+    settle()
+    assert len(calls) == 3 and all(on and level == "strong" for on, level in calls)
+    assert w.testAttribute(Qt.WA_TranslucentBackground)
+
+
+def test_other_themes_never_touch_the_system_effect(window_factory, settings):
+    w = window_factory()
+    assert not w._theme.tokens["translucent"]
+    w.show_page("playlists")
+    assert not w._glass_timer.isActive()
+
+
+def test_glass_rendering_is_prepared_only_for_the_gray_glass_on_windows(monkeypatch):
+    import sys
+
+    from PySide6.QtCore import QSettings
+
+    import app.bootstrap as bootstrap
+
+    saved = {"general/theme": "frost"}
+
+    class FakeSettings:
+        def __init__(self, *_):
+            pass
+
+        def value(self, key, default=None):
+            return saved.get(key, default)
+
+    monkeypatch.setattr(bootstrap, "QSettings", FakeSettings)
+    monkeypatch.delenv("QT_WIDGETS_RHI", raising=False)
+    monkeypatch.delenv("DINOTUBE_NO_RHI", raising=False)
+    monkeypatch.setattr(sys, "platform", "linux")
+    bootstrap._prepare_glass_rendering()
+    import os
+
+    assert "QT_WIDGETS_RHI" not in os.environ
+    monkeypatch.setattr(sys, "platform", "win32")
+    bootstrap._prepare_glass_rendering()
+    assert os.environ.get("QT_WIDGETS_RHI") == "1"
+    monkeypatch.delenv("QT_WIDGETS_RHI")
+    saved["general/theme"] = "dark"
+    bootstrap._prepare_glass_rendering()
+    assert "QT_WIDGETS_RHI" not in os.environ
+    monkeypatch.setenv("DINOTUBE_NO_RHI", "1")
+    saved["general/theme"] = "frost"
+    bootstrap._prepare_glass_rendering()
+    assert "QT_WIDGETS_RHI" not in os.environ
+
+
+@needs_web
+def test_online_surface_refresh_keeps_the_video_and_the_player_alive(qtbot, player):
+    ready(qtbot, player)
+    player.play()
+    qtbot.waitUntil(lambda: player.is_playing(), timeout=10000)
+    player.refresh_surface()
+    qtbot.wait(400)
+    assert player._view.isVisible() and player._ready and player.is_playing()

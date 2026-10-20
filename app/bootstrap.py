@@ -1,8 +1,9 @@
+import os
 import sys
 
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QSettings, QStandardPaths
 from PySide6.QtWidgets import QApplication
 
 from app import APP_NAME, APP_VERSION
@@ -48,7 +49,22 @@ def _set_windows_app_id():
         pass
 
 
+def _prepare_glass_rendering():
+    """Vidro cinza no Windows: a janela translúcida e o player online (Chromium) precisam usar a mesma renderização (RHI)
+    desde o início. Sem isso o Qt recria a janela na primeira vez que o vídeo aparece, e o vídeo some e o vidro se perde.
+    Só vale quando o tema salvo é o Vidro cinza; DINOTUBE_NO_RHI=1 desliga."""
+    if sys.platform != "win32" or os.environ.get("DINOTUBE_NO_RHI"):
+        return
+    try:
+        theme = QSettings(APP_NAME, APP_NAME).value("general/theme")
+    except Exception:
+        return
+    if theme == "frost":
+        os.environ.setdefault("QT_WIDGETS_RHI", "1")
+
+
 def run():
+    _prepare_glass_rendering()
     _set_windows_app_id()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

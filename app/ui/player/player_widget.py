@@ -440,6 +440,10 @@ class PlayerWidget(QFrame):
     # ------------------------------------------------------------------------------------
     # comandos
     # ------------------------------------------------------------------------------------
+    def refresh_surface(self):
+        if self._backend is not None:
+            self._backend.refresh_surface()
+
     def toggle_play(self):
         if self._backend is None:
             return
