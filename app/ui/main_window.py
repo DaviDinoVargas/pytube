@@ -76,6 +76,7 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
 
         tokens = theme.tokens
+        self.setProperty("dinoMainWindow", True)  # o player online hospeda o vídeo numa janela própria sobre esta (ver OnlinePlayer)
         self.glass_blur_level = settings.glass_blur
         self._glass_log = get_logger("glass")
         self._glass_timer = QTimer(self)

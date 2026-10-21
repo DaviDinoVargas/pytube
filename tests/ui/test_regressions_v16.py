@@ -360,3 +360,37 @@ def test_overlay_is_released_when_the_player_becomes_its_own_window_and_returns_
     holder.show()
     qtbot.waitUntil(lambda: player._overlay is not None, timeout=3000)
     player.shutdown()
+
+
+@needs_web
+def test_on_windows_the_main_window_always_hosts_the_video_in_the_overlay_even_with_an_opaque_theme(qtbot, monkeypatch):
+    """Sem isso o Chromium dentro da janela principal a trocava por uma superfície sem alfa e o vidro nunca mais voltava."""
+    import app.ui.player.online_player as op
+
+    monkeypatch.setattr(op, "IS_WINDOWS", True)
+    window, player, _ = glass_host(qtbot, translucent=False)
+    window.setProperty("dinoMainWindow", True)
+    player.sync_host()
+    assert player._overlay is not None and player._view.window() is player._overlay
+    # vai e volta entre tema de vidro e tema opaco: a imagem nunca entra na janela principal
+    for translucent in (True, False, True, False):
+        window.setAttribute(Qt.WA_TranslucentBackground, translucent)
+        player.sync_host()
+        assert player._overlay is not None and player._view.window() is player._overlay
+    player.shutdown()
+
+
+@needs_web
+def test_other_systems_keep_the_video_embedded_with_opaque_themes(qtbot, monkeypatch):
+    import app.ui.player.online_player as op
+
+    monkeypatch.setattr(op, "IS_WINDOWS", False)
+    window, player, _ = glass_host(qtbot, translucent=False)
+    window.setProperty("dinoMainWindow", True)
+    player.sync_host()
+    assert player._overlay is None
+    player.shutdown()
+
+
+def test_main_window_is_marked_for_the_overlay(window_factory):
+    assert window_factory().property("dinoMainWindow") is True

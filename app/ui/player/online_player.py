@@ -1,3 +1,4 @@
+import sys
 from urllib.parse import urlparse
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt, QTimer, QUrl
@@ -51,6 +52,7 @@ class EmbedPage(QWebEnginePage):
         return None  # sem pop-ups ("Assistir no YouTube" etc.)
 
 
+IS_WINDOWS = sys.platform == "win32"
 OVERLAY_FLAGS = Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
 OVERLAY_TICK_MS = 40
 
@@ -193,8 +195,13 @@ class OnlinePlayer(PlayerBackend):
 
     # -- hospedagem da imagem: embutida, ou numa janela própria sobre uma janela translúcida -------------------
     def _wants_overlay(self):
+        """Janela translúcida: sempre. No Windows, a janela principal também usa a sobreposição mesmo com um tema opaco:
+        o Chromium dentro dela faz o Qt trocar a janela para uma superfície Direct3D sem canal alfa, e a partir daí o
+        vidro não volta mais (nem ao trocar de tema e voltar). Tela cheia e mini player são janelas opacas próprias."""
         window = self.window()
-        return window is not self and window.testAttribute(Qt.WA_TranslucentBackground)
+        if window is self:
+            return False
+        return window.testAttribute(Qt.WA_TranslucentBackground) or (IS_WINDOWS and bool(window.property("dinoMainWindow")))
 
     def sync_host(self):
         """Decide onde a imagem do Chromium mora: no próprio widget, ou na janela de sobreposição quando a janela
