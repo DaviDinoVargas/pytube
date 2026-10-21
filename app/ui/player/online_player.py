@@ -1,11 +1,11 @@
 from urllib.parse import urlparse
 
-from PySide6.QtCore import QCoreApplication, QEvent, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QPalette
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QVBoxLayout
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from app.domain import playback
 from app.infrastructure.media import embed
@@ -51,6 +51,26 @@ class EmbedPage(QWebEnginePage):
         return None  # sem pop-ups ("Assistir no YouTube" etc.)
 
 
+OVERLAY_FLAGS = Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
+OVERLAY_TICK_MS = 40
+
+
+class VideoOverlay(QWidget):
+    """Janela opaca, sem moldura e "filha" da janela principal, que hospeda a imagem do Chromium.
+
+    O Chromium (QtWebEngine) não convive bem com uma janela de transparência por pixel: o Qt troca a forma de desenhar
+    a janela inteira quando a imagem aparece, e o efeito de vidro se perde (a janela fica cinza e opaca). Com o vídeo
+    numa janela própria por cima do espaço do player, a janela de vidro nunca contém o Chromium e fica estável."""
+
+    def __init__(self, owner):
+        super().__init__(owner, OVERLAY_FLAGS)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(QPalette.Window, Qt.black)
+        self.setPalette(palette)
+
+
 class OnlinePlayer(PlayerBackend):
     """Reproduz o vídeo pelo player incorporado do YouTube, controlado pelos nossos botões."""
 
@@ -85,9 +105,14 @@ class OnlinePlayer(PlayerBackend):
         self._view = QWebEngineView(self)
         self._view.setPage(self._page)
         self._view.installEventFilter(self)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._view)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.addWidget(self._view)
+        self._overlay = None  # janela que hospeda a view quando a janela principal é translúcida (Vidro cinza)
+        self._overlay_owner = None
+        self._overlay_timer = QTimer(self)
+        self._overlay_timer.setInterval(OVERLAY_TICK_MS)
+        self._overlay_timer.timeout.connect(self._sync_overlay)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -130,8 +155,12 @@ class OnlinePlayer(PlayerBackend):
         return self._target_height
 
     def eventFilter(self, obj, event):
-        if obj is self._view and event.type() == QEvent.Resize:
+        kind = event.type()
+        if obj is self._view and kind == QEvent.Resize:
             self._apply_zoom()
+        elif self._overlay is not None and obj is not self._view and kind in (
+                QEvent.Move, QEvent.Resize, QEvent.Show, QEvent.Hide, QEvent.WindowStateChange, QEvent.WinIdChange):
+            self._sync_overlay()
         return super().eventFilter(obj, event)
 
     def load(self, video_id, start=0.0):
@@ -162,9 +191,96 @@ class OnlinePlayer(PlayerBackend):
         self.loaded.emit()
         QTimer.singleShot(250, self._nudge)
 
+    # -- hospedagem da imagem: embutida, ou numa janela própria sobre uma janela translúcida -------------------
+    def _wants_overlay(self):
+        window = self.window()
+        return window is not self and window.testAttribute(Qt.WA_TranslucentBackground)
+
+    def sync_host(self):
+        """Decide onde a imagem do Chromium mora: no próprio widget, ou na janela de sobreposição quando a janela
+        principal tem transparência por pixel. Chamado ao mostrar, ao trocar de tema e ao recriar a janela."""
+        if self._view is None:
+            return
+        wanted = self._wants_overlay()
+        if wanted and (self._overlay is None or self._overlay_owner is not self.window()):
+            self._attach_overlay()
+        elif not wanted and self._overlay is not None:
+            self._detach_overlay()
+        self._sync_overlay()
+
+    def _attach_overlay(self):
+        owner = self.window()
+        if self._overlay is not None:
+            self._release_overlay_owner()
+            self._overlay.setParent(owner, OVERLAY_FLAGS)
+        else:
+            self._overlay = VideoOverlay(owner)
+            self._layout.removeWidget(self._view)
+            self._view.setParent(self._overlay)
+        self._overlay_owner = owner
+        owner.installEventFilter(self)
+        self.installEventFilter(self)
+        self._overlay_timer.start()
+
+    def _release_overlay_owner(self):
+        if self._overlay_owner is not None:
+            try:
+                self._overlay_owner.removeEventFilter(self)
+            except RuntimeError:  # a janela dona já foi destruída
+                pass
+        self._overlay_owner = None
+
+    def _detach_overlay(self):
+        self._overlay_timer.stop()
+        self._release_overlay_owner()
+        overlay, self._overlay = self._overlay, None
+        if overlay is not None:
+            overlay.hide()
+            self._view.setParent(self)
+            self._view.setGeometry(self.rect())
+            self._layout.addWidget(self._view)
+            self._view.show()
+            overlay.deleteLater()
+
+    def _sync_overlay(self):
+        """Põe a janela de sobreposição exatamente sobre a parte visível do player (recortada por barras de rolagem,
+        painéis por cima etc.) e a esconde quando o player não está à vista."""
+        overlay = self._overlay
+        if overlay is None:
+            return
+        window = self.window()
+        visible = self.isVisible() and window.isVisible() and not window.isMinimized()
+        region = self.visibleRegion() if visible else None
+        bounds = region.boundingRect() if region is not None else QRect()
+        if bounds.isEmpty():
+            if overlay.isVisible():
+                overlay.hide()
+            return
+        target = QRect(self.mapToGlobal(bounds.topLeft()), bounds.size())
+        if overlay.geometry() != target:
+            overlay.setGeometry(target)
+        view_geometry = QRect(QPoint(-bounds.x(), -bounds.y()), self.size())
+        if self._view.geometry() != view_geometry:
+            self._view.setGeometry(view_geometry)
+        if region.rectCount() > 1:  # algo (ex.: a barra do modo cinema) cobre parte do vídeo: a janela é recortada
+            overlay.setMask(region.translated(-bounds.topLeft()))
+        elif overlay.mask().boundingRect() != QRect():
+            overlay.clearMask()
+        if not overlay.isVisible():
+            overlay.show()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.sync_host()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._sync_overlay()  # o vídeo some junto com a página, sem esperar o próximo ciclo
+
     def refresh_surface(self):
         """A janela do sistema foi recriada (ex.: Vidro cinza): o Chromium precisa reanexar a superfície da imagem,
         senão o vídeo some e só o áudio continua. Esconder e mostrar a view faz isso sem recarregar o vídeo."""
+        self.sync_host()
         if self._view is None or not self._view.isVisible():
             return
         self._view.hide()
@@ -282,10 +398,16 @@ class OnlinePlayer(PlayerBackend):
         """Encerramento ordenado: a view e a página saem antes do perfil. Sem isso o Chromium pode travar ao sair."""
         self._timer.stop()
         self._quality_timer.stop()
+        self._overlay_timer.stop()
+        self._release_overlay_owner()
         self._ready = self._playing = False
         view, page = self._view, self._page
+        overlay, self._overlay = self._overlay, None
         view.setParent(None)
         view.deleteLater()
+        if overlay is not None:
+            overlay.hide()
+            overlay.deleteLater()
         page.deleteLater()  # o perfil é filho da página e sai depois dela
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 

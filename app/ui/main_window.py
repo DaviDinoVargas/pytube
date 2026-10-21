@@ -77,6 +77,7 @@ class MainWindow(QMainWindow):
 
         tokens = theme.tokens
         self.glass_blur_level = settings.glass_blur
+        self._glass_log = get_logger("glass")
         self._glass_timer = QTimer(self)
         self._glass_timer.setSingleShot(True)
         self._glass_timer.timeout.connect(self._reapply_glass)
@@ -729,8 +730,12 @@ class MainWindow(QMainWindow):
         if not self.testAttribute(Qt.WA_TranslucentBackground):
             set_window_translucent(self, True)
         enable_system_blur(self, True, self.glass_blur_level)
+        handle = self.windowHandle()
+        self._glass_log.info(
+            "vidro: pagina=%s translucido=%s alfa=%s superficie=%s", self.current_page, self.testAttribute(Qt.WA_TranslucentBackground),
+            handle.format().alphaBufferSize() if handle else None, handle.surfaceType().name if handle else None)
         self.backdrop.update()
-        self.watch_page.player.refresh_surface()  # o vídeo online precisa reanexar a imagem à janela recriada
+        self.watch_page.player.refresh_surface()  # o vídeo online reposiciona/reanexa a imagem à janela recriada
 
     def set_glass_blur(self, level):
         self._settings.glass_blur = level
@@ -835,20 +840,11 @@ class MainWindow(QMainWindow):
         self._theme.apply(name)
 
 
-    def _warn_glass_restart(self, tokens):
-        """No Windows o vídeo online só aparece certo no Vidro cinza se o app já abriu com ele (renderização por RHI)."""
-        import os
-        import sys
-
-        if tokens["translucent"] and sys.platform == "win32" and os.environ.get("QT_WIDGETS_RHI") != "1" \
-                and not os.environ.get("DINOTUBE_NO_RHI") and self.isVisible():
-            self.notify(self._tr.t("glass.restart"))
-
     def _apply_tokens(self):
         tokens = self._theme.tokens
         set_window_translucent(self, tokens["translucent"])
+        self.watch_page.player.sync_host()  # com vidro, o vídeo online mora numa janela própria; sem vidro, volta para dentro
         self.schedule_glass()
-        self._warn_glass_restart(tokens)
         self.backdrop.set_tokens(tokens)
         self.sidebar.set_tokens(tokens)
         self.compact_bar.set_tokens(tokens)

@@ -240,43 +240,6 @@ def test_other_themes_never_touch_the_system_effect(window_factory, settings):
     assert not w._glass_timer.isActive()
 
 
-def test_glass_rendering_is_prepared_only_for_the_gray_glass_on_windows(monkeypatch):
-    import sys
-
-    from PySide6.QtCore import QSettings
-
-    import app.bootstrap as bootstrap
-
-    saved = {"general/theme": "frost"}
-
-    class FakeSettings:
-        def __init__(self, *_):
-            pass
-
-        def value(self, key, default=None):
-            return saved.get(key, default)
-
-    monkeypatch.setattr(bootstrap, "QSettings", FakeSettings)
-    monkeypatch.delenv("QT_WIDGETS_RHI", raising=False)
-    monkeypatch.delenv("DINOTUBE_NO_RHI", raising=False)
-    monkeypatch.setattr(sys, "platform", "linux")
-    bootstrap._prepare_glass_rendering()
-    import os
-
-    assert "QT_WIDGETS_RHI" not in os.environ
-    monkeypatch.setattr(sys, "platform", "win32")
-    bootstrap._prepare_glass_rendering()
-    assert os.environ.get("QT_WIDGETS_RHI") == "1"
-    monkeypatch.delenv("QT_WIDGETS_RHI")
-    saved["general/theme"] = "dark"
-    bootstrap._prepare_glass_rendering()
-    assert "QT_WIDGETS_RHI" not in os.environ
-    monkeypatch.setenv("DINOTUBE_NO_RHI", "1")
-    saved["general/theme"] = "frost"
-    bootstrap._prepare_glass_rendering()
-    assert "QT_WIDGETS_RHI" not in os.environ
-
-
 @needs_web
 def test_online_surface_refresh_keeps_the_video_and_the_player_alive(qtbot, player):
     ready(qtbot, player)
@@ -285,3 +248,115 @@ def test_online_surface_refresh_keeps_the_video_and_the_player_alive(qtbot, play
     player.refresh_surface()
     qtbot.wait(400)
     assert player._view.isVisible() and player._ready and player.is_playing()
+
+
+# -- vídeo online numa janela própria quando a janela principal é de vidro ---------------------------------------
+def glass_host(qtbot, translucent=True):
+    from PySide6.QtCore import QRect
+    from PySide6.QtWidgets import QMainWindow, QScrollArea, QVBoxLayout, QWidget
+
+    window = QMainWindow()
+    window.setAttribute(Qt.WA_TranslucentBackground, translucent)
+    qtbot.addWidget(window)
+    window.resize(900, 700)
+    page = QWidget()
+    column = QVBoxLayout(page)
+    player = OnlinePlayer(api_script=MOCK_API, timeout_ms=15000)
+    player.setFixedSize(480, 270)
+    column.addWidget(player)
+    column.addStretch(1)
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setWidget(page)
+    window.setCentralWidget(scroll)
+    window.show()
+    qtbot.waitUntil(lambda: player.isVisible(), timeout=5000)
+    return window, player, scroll
+
+
+@needs_web
+def test_video_lives_in_its_own_window_over_a_translucent_window(qtbot):
+    window, player, _ = glass_host(qtbot)
+    player.sync_host()
+    overlay = player._overlay
+    assert overlay is not None and player._view.window() is overlay
+    assert overlay.isVisible() and overlay.parent() is window
+    assert overlay.geometry().topLeft() == player.mapToGlobal(player.rect().topLeft())
+    assert overlay.size() == player.size()
+    player.shutdown()
+
+
+@needs_web
+def test_video_stays_embedded_in_opaque_windows(qtbot):
+    window, player, _ = glass_host(qtbot, translucent=False)
+    player.sync_host()
+    assert player._overlay is None and player._view.parent() is player
+    player.shutdown()
+
+
+@needs_web
+def test_overlay_follows_the_window_hides_with_the_page_and_returns_when_glass_is_off(qtbot):
+    window, player, _ = glass_host(qtbot)
+    player.sync_host()
+    overlay = player._overlay
+    window.move(window.x() + 40, window.y() + 30)
+    qtbot.waitUntil(lambda: overlay.geometry().topLeft() == player.mapToGlobal(player.rect().topLeft()), timeout=3000)
+    player.hide()
+    assert not overlay.isVisible()  # some junto com a página, sem esperar o relógio
+    player.show()
+    qtbot.waitUntil(lambda: overlay.isVisible(), timeout=3000)
+    window.setAttribute(Qt.WA_TranslucentBackground, False)  # o tema deixou de ser de vidro
+    player.sync_host()
+    assert player._overlay is None and player._view.parent() is player and player._view.isVisible()
+    player.shutdown()
+
+
+@needs_web
+def test_overlay_is_clipped_when_the_player_scrolls_out_of_view(qtbot):
+    window, player, scroll = glass_host(qtbot)
+    window.resize(900, 260)  # a janela é menor que o player: parte do vídeo fica fora
+    qtbot.wait(100)
+    player.sync_host()
+    overlay = player._overlay
+    qtbot.waitUntil(lambda: overlay.isVisible() and overlay.height() < player.height(), timeout=3000)
+    assert overlay.height() <= scroll.viewport().height()
+    player.shutdown()
+
+
+@needs_web
+def test_video_loads_and_plays_inside_the_overlay(qtbot):
+    window, player, _ = glass_host(qtbot)
+    player.sync_host()
+    ready(qtbot, player)
+    player.play()
+    qtbot.waitUntil(lambda: player.is_playing() and player.position() >= 1.0, timeout=10000)
+    assert player._view.window() is player._overlay
+    player.shutdown()
+
+
+@needs_web
+def test_overlay_is_released_when_the_player_becomes_its_own_window_and_returns_afterwards(qtbot):
+    """Tela cheia e mini player tiram o player da janela de vidro (ele vira uma janela opaca): a imagem volta para dentro."""
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    window, player, _ = glass_host(qtbot)
+    holder = QWidget()
+    box = QVBoxLayout(holder)
+    box.setContentsMargins(0, 0, 0, 0)
+    player.parentWidget().layout().removeWidget(player)
+    box.addWidget(player)
+    holder.setParent(window.centralWidget().widget())
+    holder.setFixedSize(480, 270)
+    holder.show()
+    qtbot.waitUntil(lambda: player.isVisible(), timeout=3000)
+    player.sync_host()
+    assert player._overlay is not None
+    holder.setParent(None)  # como o PlayerWidget faz ao entrar em tela cheia
+    holder.show()
+    qtbot.addWidget(holder)
+    qtbot.waitUntil(lambda: player.isVisible(), timeout=3000)
+    assert player._overlay is None and player._view.parent() is player
+    holder.setParent(window.centralWidget().widget())
+    holder.show()
+    qtbot.waitUntil(lambda: player._overlay is not None, timeout=3000)
+    player.shutdown()

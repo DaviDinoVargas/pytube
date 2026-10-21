@@ -444,6 +444,11 @@ class PlayerWidget(QFrame):
         if self._backend is not None:
             self._backend.refresh_surface()
 
+    def sync_host(self):
+        for backend in (self._local, self._online):
+            if backend is not None:
+                backend.sync_host()
+
     def toggle_play(self):
         if self._backend is None:
             return
